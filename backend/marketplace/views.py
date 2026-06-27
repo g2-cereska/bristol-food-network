@@ -154,6 +154,7 @@ class ProductDetailView(generics.RetrieveUpdateAPIView):
 
 
 class CartView(APIView):
+    """Retrieves a specific customer's cart. GET only; needs customer_id in the URL."""
     permission_classes = [IsAuthenticatedAndCustomer]
 
     def get(self, request, customer_id):
@@ -164,6 +165,17 @@ class CartView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         return Response(CartSerializer(customer.cart).data)
+
+
+class AddToCartView(APIView):
+    """
+    Adds an item to the current user's own cart. POST only, no URL
+    parameter — the customer always comes from the authenticated
+    session, never from client input. Previously this shared CartView,
+    which crashed with a TypeError on a plain browser GET to /cart/add/
+    because CartView.get() requires a customer_id this URL never supplies.
+    """
+    permission_classes = [IsAuthenticatedAndCustomer]
 
     def post(self, request):
         payload = request.data.copy()
