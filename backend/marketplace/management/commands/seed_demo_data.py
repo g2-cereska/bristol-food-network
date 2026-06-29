@@ -80,11 +80,13 @@ class Command(BaseCommand):
     def _seed_admin(self, username):
         user, created = User.objects.get_or_create(
             username=username,
-            defaults={'email': f'{username}@example.com', 'is_staff': True},
+            defaults={'email': f'{username}@example.com'},
         )
         if created:
             user.set_password(DEMO_PASSWORD)
-            user.save()
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
         return user
 
     def _seed_products(self, producer, categories):
