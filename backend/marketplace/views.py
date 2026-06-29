@@ -296,11 +296,11 @@ class AIRecommendView(APIView):
 
     def get(self, request, customer_id):
         customer = get_object_or_404(CustomerProfile, pk=customer_id)
-        if (
+        is_same_customer = (
             hasattr(request.user, 'customer_profile')
-            and request.user.customer_profile != customer
-            and not request.user.is_staff
-        ):
+            and request.user.customer_profile == customer
+        )
+        if not is_same_customer and not request.user.is_staff:
             return Response(
                 {'detail': 'You can only access your own recommendations.'},
                 status=status.HTTP_403_FORBIDDEN,
