@@ -1,0 +1,336 @@
+/* Bristol Food Network — shared stylesheet
+   Used by base.html and every page that extends it. */
+
+:root {
+  --bg: #EEF2E6;
+  --bg-dotted: radial-gradient(circle, #D8DECB 1px, transparent 1px);
+  --bg-card: #FFFFFF;
+  --ink: #1E2A1B;
+  --ink-soft: #51604B;
+  --green: #2F5233;
+  --green-dark: #20381F;
+  --gold: #B97F1C;
+  --gold-soft: #F4E4C1;
+  --red: #A4291F;
+  --border: #D8DECB;
+  --radius: 10px;
+  --shadow: 0 10px 28px -14px rgba(31, 42, 27, 0.35);
+  --font-display: 'Archivo', 'Segoe UI', sans-serif;
+  --font-body: 'Work Sans', 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+}
+
+a { color: var(--green-dark); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  color: var(--green-dark);
+  margin: 0 0 0.4em;
+}
+
+code {
+  background: var(--gold-soft);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+
+/* ---------- Header / nav ---------- */
+
+.site-header {
+  background: var(--green);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: var(--shadow);
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0.85rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.brand:hover { text-decoration: none; opacity: 0.9; }
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 6px;
+  background: var(--green-dark);
+  border: 1.5px solid var(--gold);
+  color: var(--gold-soft);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.main-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.main-nav a {
+  color: #EDF2E6;
+  font-weight: 500;
+  font-size: 0.95rem;
+  position: relative;
+}
+.main-nav a:hover { text-decoration: none; }
+.main-nav a::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -6px;
+  height: 2px;
+  background: var(--gold);
+  transform: scaleX(0);
+  transition: transform 150ms ease;
+}
+.main-nav a:hover::after { transform: scaleX(1); }
+
+.nav-user {
+  color: var(--gold-soft);
+  font-size: 0.88rem;
+  border-left: 1px solid rgba(255,255,255,0.25);
+  padding-left: 1rem;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #EDF2E6;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+.btn-link:hover { color: var(--gold-soft); text-decoration: underline; }
+
+/* ---------- Main / messages ---------- */
+
+.site-main {
+  flex: 1;
+  width: 100%;
+}
+
+.messages {
+  list-style: none;
+  margin: 1rem auto 0;
+  max-width: 1100px;
+  padding: 0 1.25rem;
+}
+.messages .message {
+  background: var(--bg-card);
+  border-left: 4px solid var(--green);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.92rem;
+}
+.messages .message.error { border-left-color: var(--red); }
+
+.site-footer {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  padding: 1.5rem 1rem 2rem;
+}
+
+/* ---------- Auth page ---------- */
+
+.auth-page {
+  min-height: calc(100vh - 140px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.25rem;
+  background-image: var(--bg-dotted);
+  background-size: 16px 16px;
+}
+
+.auth-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 2.2rem 2rem 1.8rem;
+  max-width: 420px;
+  width: 100%;
+}
+
+/* Signature element: a stamped "crate label" badge, styled after
+   the printed labels found on real fruit & veg shipping crates. */
+.crate-label {
+  border: 1.5px solid var(--green);
+  border-radius: 4px;
+  padding: 0.7rem 0.6rem 0.6rem;
+  margin-bottom: 1.4rem;
+  text-align: center;
+  position: relative;
+}
+.crate-label::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.crate-label-top,
+.crate-label-bottom {
+  display: block;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.crate-label-main {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--green-dark);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin: 0.15rem 0;
+}
+
+.auth-card h1 {
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.auth-sub {
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  margin: 0 0 1.4rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.auth-form label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 0.6rem;
+}
+
+.auth-form input {
+  font-family: var(--font-body);
+  font-size: 0.97rem;
+  padding: 0.55rem 0.7rem;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: #FBFCF9;
+  color: var(--ink);
+}
+.auth-form input:focus {
+  border-color: var(--gold);
+  outline: none;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.btn-primary {
+  margin-top: 1.2rem;
+  background: var(--green);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.65rem 1rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.97rem;
+  cursor: pointer;
+  transition: background 150ms ease;
+  text-align: center;
+  display: block;
+  text-decoration: none;
+}
+.btn-primary:hover {
+  background: var(--green-dark);
+  text-decoration: none;
+}
+.btn-primary:disabled {
+  background: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+.auth-footer {
+  text-align: center;
+  font-size: 0.85rem;
+  margin-top: 1.4rem;
+  color: var(--ink-soft);
+}
+
+.auth-demo {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-top: 0.9rem;
+  line-height: 1.6;
+}
+
+.auth-already {
+  text-align: center;
+}
+.auth-already p { margin-bottom: 1.2rem; }
+
+@media (max-width: 480px) {
+  .auth-card { padding: 1.6rem 1.3rem; }
+  .header-inner { padding: 0.75rem 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-nav a::after,
+  .btn-primary { transition: none; }
+}

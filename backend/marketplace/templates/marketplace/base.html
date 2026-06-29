@@ -1,0 +1,62 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en-gb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Bristol Food Network{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'marketplace/css/style.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="{% url 'catalogue_page' %}">
+        <span class="brand-badge">BFN</span>
+        <span class="brand-name">Bristol Food Network</span>
+      </a>
+
+      <nav class="main-nav">
+        {% if user.is_authenticated %}
+          {% if user.is_staff %}
+            <a href="{% url 'admin_dashboard_page' %}">Admin Dashboard</a>
+          {% elif user.producer_profile %}
+            <a href="{% url 'producer_page' %}">My Stall</a>
+          {% else %}
+            <a href="{% url 'catalogue_page' %}">Browse</a>
+            <a href="{% url 'cart_page' %}">Cart</a>
+            <a href="{% url 'orders_page' %}">My Orders</a>
+          {% endif %}
+          <span class="nav-user">{{ user.username }}</span>
+          <button type="button" id="logout-btn" class="btn-link">Log out</button>
+        {% else %}
+          <a href="{% url 'login_page' %}">Log in</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="site-main">
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li class="message {{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>Bristol Food Network &middot; connecting local growers with local tables</p>
+  </footer>
+
+  <script src="{% static 'marketplace/js/auth.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

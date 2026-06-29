@@ -1,8 +1,105 @@
-<!DOCTYPE html>
-<html>
-<head><title>Bristol Food Network</title></head>
-<body>
-<h1>login page placeholder</h1>
-<p>This template will be built out in Sprint 5.</p>
-</body>
-</html>
+{% extends 'marketplace/base.html' %}
+{% load static %}
+
+{% block title %}Log in &middot; Bristol Food Network{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card">
+
+    <div class="crate-label">
+      <span class="crate-label-top">Bristol Regional Food Network</span>
+      <span class="crate-label-main">Fresh from the network</span>
+      <span class="crate-label-bottom">Producers &middot; Customers &middot; Admin</span>
+    </div>
+
+    {% if user.is_authenticated %}
+      <div class="auth-already">
+        <h1>You're already logged in</h1>
+        <p>Signed in as <strong>{{ user.username }}</strong>.</p>
+        <a class="btn-primary" href="{% url 'catalogue_page' %}">Continue to the marketplace</a>
+      </div>
+    {% else %}
+      <h1>Log in</h1>
+      <p class="auth-sub">Access your stall, your basket, or your orders.</p>
+
+      <form id="login-form" class="auth-form" novalidate>
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+        <p id="login-error" class="form-error" hidden></p>
+
+        <button type="submit" class="btn-primary" id="login-submit">Log in</button>
+      </form>
+
+      <p class="auth-footer">
+        New to the network?
+        <a href="/api/customers/register/">Register as a customer</a>
+        or
+        <a href="/api/producers/register/">register as a producer</a>.
+      </p>
+
+      <p class="auth-demo">
+        Demo accounts &mdash; password <code>Password123!</code> for all:<br>
+        <code>producer_jane</code>, <code>producer_dairy</code>,
+        <code>customer_robert</code>, <code>admin_1</code>
+      </p>
+    {% endif %}
+
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('login-form');
+    if (!form) return; // already-logged-in branch has no form
+
+    const errorBox = document.getElementById('login-error');
+    const submitBtn = document.getElementById('login-submit');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorBox.hidden = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Logging in…';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const response = await apiFetch('/api/auth/login/', {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          window.location.href = roleHomeUrl(data.role);
+          return;
+        }
+
+        let message = 'Invalid username or password.';
+        try {
+          const data = await response.json();
+          if (data.detail) message = data.detail;
+        } catch (parseErr) {
+          // response had no JSON body — keep the default message
+        }
+        errorBox.textContent = message;
+        errorBox.hidden = false;
+      } catch (networkErr) {
+        errorBox.textContent = 'Could not reach the server. Please try again.';
+        errorBox.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Log in';
+      }
+    });
+  });
+</script>
+{% endblock %}
