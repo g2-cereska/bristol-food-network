@@ -1,8 +1,230 @@
-<!DOCTYPE html>
-<html>
-<head><title>Bristol Food Network</title></head>
-<body>
-<h1>catalogue page placeholder</h1>
-<p>This template will be built out in Sprint 5.</p>
-</body>
-</html>
+{% extends 'marketplace/base.html' %}
+{% load static %}
+
+{% block title %}Browse &middot; Bristol Food Network{% endblock %}
+
+{% block content %}
+<section class="catalogue-page">
+
+  <header class="catalogue-header">
+    <h1>Browse the stalls</h1>
+    <p class="catalogue-sub">Produce listed directly by local growers and producers across the Bristol region.</p>
+  </header>
+
+  <form id="filter-form" class="filter-bar" novalidate>
+    <input
+      type="search"
+      id="search-input"
+      placeholder="Search produce or producers&hellip;"
+      aria-label="Search produce or producers"
+    >
+    <select id="category-select" aria-label="Filter by category">
+      <option value="">All categories</option>
+    </select>
+    <button type="submit" class="btn-secondary">Search</button>
+  </form>
+
+  <p id="catalogue-status" class="catalogue-status" role="status" aria-live="polite"></p>
+
+  <div id="product-grid" class="product-grid"></div>
+
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const isCustomer = document.body.dataset.isCustomer === 'true';
+
+    const grid = document.getElementById('product-grid');
+    const statusEl = document.getElementById('catalogue-status');
+    const searchInput = document.getElementById('search-input');
+    const categorySelect = document.getElementById('category-select');
+    const filterForm = document.getElementById('filter-form');
+
+    // Escape any producer/product-supplied text before it goes into
+    // innerHTML — product names and descriptions come from producer
+    // input, so they're treated as untrusted in the browser too.
+    function escapeHtml(value) {
+      if (value === null || value === undefined) return '';
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function extractErrorMessage(data) {
+      if (!data) return 'Could not add this item.';
+      if (data.detail) return data.detail;
+      if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
+        return data.non_field_errors[0];
+      }
+      if (Array.isArray(data) && data.length) return data[0];
+      const firstKey = Object.keys(data)[0];
+      if (firstKey && Array.isArray(data[firstKey])) return data[firstKey][0];
+      return 'Could not add this item.';
+    }
+
+    function formatPrice(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? `£${n.toFixed(2)}` : escapeHtml(value);
+    }
+
+    function stockLabel(product) {
+      if (!product.is_visible) {
+        if (product.stock_quantity <= 0) return 'Out of stock';
+        if (product.availability === 'out_of_season') return 'Out of season';
+        return 'Currently unavailable';
+      }
+      if (product.stock_quantity <= 5) return `Only ${product.stock_quantity} ${escapeHtml(product.unit)} left`;
+      return `${product.stock_quantity} ${escapeHtml(product.unit)} in stock`;
+    }
+
+    function formatDate(isoDate) {
+      if (!isoDate) return '';
+      const date = new Date(isoDate);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function productCardHtml(product) {
+      const hasDiscount = Number(product.discount_percent) > 0;
+      const priceRow = hasDiscount
+        ? `<span class="price-old">${formatPrice(product.price)}</span>
+           <span class="price-now">${formatPrice(product.current_price)}</span>`
+        : `<span class="price-now">${formatPrice(product.current_price)}</span>`;
+
+      const badges = [
+        `<span class="badge badge-category">${escapeHtml(product.category_name || 'Produce')}</span>`,
+        product.availability === 'in_season' ? '<span class="badge badge-season">In season</span>' : '',
+        product.organic_certified ? '<span class="badge badge-organic">Organic</span>' : '',
+        product.grade ? `<span class="badge badge-grade">Grade ${escapeHtml(product.grade)}</span>` : '',
+      ].join('');
+
+      const canOrder = isCustomer && product.is_visible && product.stock_quantity > 0;
+
+      const orderControls = isCustomer
+        ? `<div class="add-row">
+             <input
+               type="number" min="1" value="1" class="qty-input"
+               data-product-id="${product.id}" aria-label="Quantity"
+               ${canOrder ? '' : 'disabled'}
+             >
+             <button
+               type="button" class="btn-primary add-btn"
+               data-product-id="${product.id}" ${canOrder ? '' : 'disabled'}
+             >Add to basket</button>
+           </div>
+           <p class="add-feedback" data-feedback-for="${product.id}" hidden></p>`
+        : `<a class="add-row-link" href="/market/login/">Log in as a customer to order</a>`;
+
+      return `
+        <article class="product-card">
+          <div class="card-top">${badges}</div>
+          <h3>${escapeHtml(product.name)}</h3>
+          <p class="producer-line">
+            ${escapeHtml(product.producer_name)}${product.farm_origin ? ' &middot; ' + escapeHtml(product.farm_origin) : ''}
+          </p>
+          ${product.description ? `<p class="product-desc">${escapeHtml(product.description)}</p>` : ''}
+          ${product.harvest_date ? `<p class="harvest-line">Harvested ${formatDate(product.harvest_date)}</p>` : ''}
+          <div class="price-row">${priceRow}<span class="unit">/ ${escapeHtml(product.unit)}</span></div>
+          <p class="stock-line">${stockLabel(product)}</p>
+          ${orderControls}
+        </article>
+      `;
+    }
+
+    async function loadCategories() {
+      try {
+        const res = await fetch('/api/categories/', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const categories = await res.json();
+        categories.forEach((category) => {
+          const option = document.createElement('option');
+          option.value = category.slug;
+          option.textContent = category.name;
+          categorySelect.appendChild(option);
+        });
+      } catch (err) {
+        console.error('Could not load categories:', err);
+      }
+    }
+
+    async function loadProducts() {
+      statusEl.textContent = 'Loading produce…';
+      grid.innerHTML = '';
+
+      const params = new URLSearchParams();
+      if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
+      if (categorySelect.value) params.set('category', categorySelect.value);
+
+      try {
+        const res = await fetch(`/api/products/?${params.toString()}`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Request failed');
+        const products = await res.json();
+
+        if (products.length === 0) {
+          statusEl.textContent = 'No produce matches that search.';
+          return;
+        }
+        statusEl.textContent = `${products.length} item${products.length === 1 ? '' : 's'} found.`;
+        grid.innerHTML = products.map(productCardHtml).join('');
+      } catch (err) {
+        statusEl.textContent = 'Could not load produce right now. Please try again.';
+        console.error(err);
+      }
+    }
+
+    // Event delegation: cards are re-rendered on every search/filter,
+    // so listeners are attached to the grid container once, not per-card.
+    grid.addEventListener('click', async (event) => {
+      const btn = event.target.closest('.add-btn');
+      if (!btn || btn.disabled) return;
+
+      const productId = btn.dataset.productId;
+      const qtyInput = grid.querySelector(`.qty-input[data-product-id="${productId}"]`);
+      const feedback = grid.querySelector(`.add-feedback[data-feedback-for="${productId}"]`);
+      const quantity = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
+
+      try {
+        const res = await apiFetch('/api/cart/add/', {
+          method: 'POST',
+          body: JSON.stringify({ product_id: Number(productId), quantity }),
+        });
+
+        const data = await res.json().catch(() => null);
+
+        if (res.ok) {
+          feedback.textContent = 'Added to your basket.';
+          feedback.classList.remove('feedback-error');
+        } else {
+          feedback.textContent = extractErrorMessage(data);
+          feedback.classList.add('feedback-error');
+        }
+      } catch (err) {
+        feedback.textContent = 'Network error — please try again.';
+        feedback.classList.add('feedback-error');
+      } finally {
+        feedback.hidden = false;
+        btn.disabled = false;
+        btn.textContent = originalText;
+        setTimeout(() => { feedback.hidden = true; }, 4000);
+      }
+    });
+
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loadProducts();
+    });
+
+    loadCategories();
+    loadProducts();
+  });
+</script>
+{% endblock %}

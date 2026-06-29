@@ -11,7 +11,13 @@
   <link rel="stylesheet" href="{% static 'marketplace/css/style.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body
+  data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
+  data-is-customer="{% if user.is_authenticated and user.customer_profile %}true{% else %}false{% endif %}"
+  data-is-producer="{% if user.is_authenticated and user.producer_profile %}true{% else %}false{% endif %}"
+  data-is-staff="{% if user.is_staff %}true{% else %}false{% endif %}"
+  data-username="{{ user.username|default:'' }}"
+>
 
   <header class="site-header">
     <div class="header-inner">
