@@ -42,30 +42,8 @@
     const categorySelect = document.getElementById('category-select');
     const filterForm = document.getElementById('filter-form');
 
-    // Escape any producer/product-supplied text before it goes into
-    // innerHTML — product names and descriptions come from producer
-    // input, so they're treated as untrusted in the browser too.
-    function escapeHtml(value) {
-      if (value === null || value === undefined) return '';
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
-
-    function extractErrorMessage(data) {
-      if (!data) return 'Could not add this item.';
-      if (data.detail) return data.detail;
-      if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
-        return data.non_field_errors[0];
-      }
-      if (Array.isArray(data) && data.length) return data[0];
-      const firstKey = Object.keys(data)[0];
-      if (firstKey && Array.isArray(data[firstKey])) return data[firstKey][0];
-      return 'Could not add this item.';
-    }
+    // escapeHtml and extractErrorMessage now live in auth.js (shared
+    // across every page) — see that file for their definitions.
 
     function formatPrice(value) {
       const n = Number(value);
@@ -108,8 +86,10 @@
       const orderControls = isCustomer
         ? `<div class="add-row">
              <input
-               type="number" min="1" value="1" class="qty-input"
-               data-product-id="${product.id}" aria-label="Quantity"
+               type="number" min="1" max="${product.stock_quantity}" value="1" class="qty-input"
+               data-product-id="${product.id}" data-stock="${product.stock_quantity}"
+               data-unit="${escapeHtml(product.unit)}"
+               aria-label="Quantity"
                ${canOrder ? '' : 'disabled'}
              >
              <button
@@ -156,7 +136,7 @@
       statusEl.textContent = 'Loading produce…';
       grid.innerHTML = '';
 
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ visible_only: 'true' });
       if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
       if (categorySelect.value) params.set('category', categorySelect.value);
 
@@ -186,11 +166,20 @@
       const productId = btn.dataset.productId;
       const qtyInput = grid.querySelector(`.qty-input[data-product-id="${productId}"]`);
       const feedback = grid.querySelector(`.add-feedback[data-feedback-for="${productId}"]`);
-      const quantity = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+      const stockLine = btn.closest('.product-card').querySelector('.stock-line');
+      const unit = qtyInput.dataset.unit || 'unit';
+      const stock = parseInt(qtyInput.dataset.stock, 10);
+      let quantity = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+
+      if (Number.isFinite(stock) && quantity > stock) {
+        quantity = stock;
+      }
+      qtyInput.value = quantity;
 
       const originalText = btn.textContent;
       btn.disabled = true;
       btn.textContent = 'Adding…';
+      let soldOut = false;
 
       try {
         const res = await apiFetch('/api/cart/add/', {
@@ -203,8 +192,27 @@
         if (res.ok) {
           feedback.textContent = 'Added to your basket.';
           feedback.classList.remove('feedback-error');
+
+          // Optimistically reflect what's left, so repeated clicks in
+          // this session can't cumulatively exceed real stock — the
+          // server is still the actual source of truth at checkout.
+          const remaining = Math.max(0, (Number.isFinite(stock) ? stock : quantity) - quantity);
+          qtyInput.dataset.stock = remaining;
+          qtyInput.max = remaining;
+          qtyInput.value = Math.min(parseInt(qtyInput.value, 10) || 1, Math.max(remaining, 1));
+          if (stockLine) {
+            stockLine.textContent = remaining <= 0
+              ? 'Out of stock'
+              : remaining <= 5
+                ? `Only ${remaining} ${escapeHtml(unit)} left`
+                : `${remaining} ${escapeHtml(unit)} in stock`;
+          }
+          if (remaining <= 0) {
+            soldOut = true;
+            qtyInput.disabled = true;
+          }
         } else {
-          feedback.textContent = extractErrorMessage(data);
+          feedback.textContent = extractErrorMessage(data, 'Could not add this item.');
           feedback.classList.add('feedback-error');
         }
       } catch (err) {
@@ -212,7 +220,7 @@
         feedback.classList.add('feedback-error');
       } finally {
         feedback.hidden = false;
-        btn.disabled = false;
+        btn.disabled = soldOut;
         btn.textContent = originalText;
         setTimeout(() => { feedback.hidden = true; }, 4000);
       }

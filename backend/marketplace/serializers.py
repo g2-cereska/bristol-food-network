@@ -207,6 +207,20 @@ class AddCartItemSerializer(serializers.Serializer):
             raise serializers.ValidationError('Product not found.')
         if not product.is_visible:
             raise serializers.ValidationError('This product is not currently available.')
+
+        existing_item = CartItem.objects.filter(
+            cart__customer_id=attrs['customer_id'],
+            product=product,
+        ).first()
+        already_in_cart = existing_item.quantity if existing_item else 0
+
+        if already_in_cart + attrs['quantity'] > product.stock_quantity:
+            available = max(product.stock_quantity - already_in_cart, 0)
+            raise serializers.ValidationError(
+                f'Only {available} {product.unit} of {product.name} left to add '
+                f'(you already have {already_in_cart} in your basket).'
+            )
+
         attrs['product'] = product
         return attrs
 
@@ -221,7 +235,6 @@ class AddCartItemSerializer(serializers.Serializer):
             item.quantity += self.validated_data['quantity']
             item.save()
         return item
-
 
 class UpdateCartItemSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1)
