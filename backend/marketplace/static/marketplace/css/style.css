@@ -536,3 +536,135 @@ code {
 @media (max-width: 480px) {
   .filter-bar { flex-direction: column; }
 }
+
+/* ---------- Cart page ---------- */
+
+.cart-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.cart-header h1 {
+  font-size: 1.7rem;
+  margin-bottom: 1rem;
+}
+
+.cart-empty {
+  text-align: center;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 2rem 1.5rem;
+  box-shadow: var(--shadow);
+}
+.cart-empty p { color: var(--ink-soft); margin-bottom: 1rem; }
+.cart-empty .btn-primary { display: inline-block; }
+
+.cart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+
+.cart-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow);
+}
+
+.cart-item-info h3 {
+  font-size: 1rem;
+  margin: 0 0 0.15rem;
+}
+
+.cart-item-meta {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.cart-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.cart-item-controls .qty-input {
+  width: 4rem;
+}
+
+.cart-line-total {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--green-dark);
+  margin-left: auto;
+}
+
+.cart-item-feedback {
+  font-size: 0.8rem;
+  color: var(--red);
+  margin: 0.4rem 0 0;
+}
+
+.cart-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--green-dark);
+  border-top: 2px solid var(--border);
+  padding-top: 0.8rem;
+  margin-bottom: 1.6rem;
+}
+
+.checkout-section {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.4rem 1.5rem 1.6rem;
+}
+
+.checkout-section h2 {
+  font-size: 1.15rem;
+  margin-bottom: 0.9rem;
+}
+
+.checkout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.checkout-form label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+.checkout-form textarea,
+.checkout-form input[type="date"] {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 0.55rem 0.7rem;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: #FBFCF9;
+  color: var(--ink);
+  resize: vertical;
+}
+.checkout-form textarea:focus,
+.checkout-form input[type="date"]:focus {
+  border-color: var(--gold);
+  outline: none;
+}
+
+@media (max-width: 480px) {
+  .cart-item-controls { flex-wrap: wrap; }
+  .cart-line-total { margin-left: 0; }
+}

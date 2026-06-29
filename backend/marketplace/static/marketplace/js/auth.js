@@ -45,6 +45,38 @@ function roleHomeUrl(role) {
   return '/market/admin-dash/';
 }
 
+/**
+ * Escape any user/producer-supplied text before it goes into innerHTML.
+ * Product names, descriptions, etc. come from producer input and are
+ * treated as untrusted in the browser, same as anywhere else.
+ */
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * Pull a human-readable message out of a DRF error response, whatever
+ * shape it comes in (detail / non_field_errors / a plain list / a
+ * field-specific list).
+ */
+function extractErrorMessage(data, fallback = 'Something went wrong.') {
+  if (!data) return fallback;
+  if (data.detail) return data.detail;
+  if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
+    return data.non_field_errors[0];
+  }
+  if (Array.isArray(data) && data.length) return data[0];
+  const firstKey = Object.keys(data)[0];
+  if (firstKey && Array.isArray(data[firstKey])) return data[firstKey][0];
+  return fallback;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const logoutBtn = document.getElementById('logout-btn');
   if (!logoutBtn) return;

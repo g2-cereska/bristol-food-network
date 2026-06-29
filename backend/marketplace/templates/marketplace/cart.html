@@ -1,8 +1,231 @@
-<!DOCTYPE html>
-<html>
-<head><title>Bristol Food Network</title></head>
-<body>
-<h1>cart page placeholder</h1>
-<p>This template will be built out in Sprint 5.</p>
-</body>
-</html>
+{% extends 'marketplace/base.html' %}
+{% load static %}
+
+{% block title %}Your basket &middot; Bristol Food Network{% endblock %}
+
+{% block content %}
+<section class="cart-page">
+
+  <header class="cart-header">
+    <h1>Your basket</h1>
+  </header>
+
+  <div id="cart-guest-notice" class="cart-empty" hidden>
+    <p>You need to be logged in as a customer to have a basket.</p>
+    <a class="btn-primary" href="/market/login/">Log in</a>
+  </div>
+
+  <p id="cart-status" class="catalogue-status" role="status" aria-live="polite"></p>
+
+  <div id="cart-list" class="cart-list"></div>
+
+  <div id="cart-summary" class="cart-summary" hidden>
+    <span>Total</span>
+    <span id="cart-total-amount">&pound;0.00</span>
+  </div>
+
+  <section id="checkout-section" class="checkout-section" hidden>
+    <h2>Checkout</h2>
+    <form id="checkout-form" class="checkout-form" novalidate>
+      <label for="delivery-address">Delivery address</label>
+      <textarea
+        id="delivery-address" rows="2"
+        placeholder="Leave blank to use your saved address"
+      ></textarea>
+
+      <label for="delivery-date">Delivery date</label>
+      <input type="date" id="delivery-date" required>
+
+      <p id="checkout-error" class="form-error" hidden></p>
+
+      <button type="submit" class="btn-primary" id="checkout-submit">Place order</button>
+    </form>
+  </section>
+
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const isCustomer = document.body.dataset.isCustomer === 'true';
+    const customerId = document.body.dataset.customerId;
+
+    const guestNotice = document.getElementById('cart-guest-notice');
+    const statusEl = document.getElementById('cart-status');
+    const listEl = document.getElementById('cart-list');
+    const summaryEl = document.getElementById('cart-summary');
+    const totalAmountEl = document.getElementById('cart-total-amount');
+    const checkoutSection = document.getElementById('checkout-section');
+    const checkoutForm = document.getElementById('checkout-form');
+    const deliveryDateInput = document.getElementById('delivery-date');
+    const checkoutError = document.getElementById('checkout-error');
+    const checkoutSubmit = document.getElementById('checkout-submit');
+
+    if (!isCustomer || !customerId) {
+      guestNotice.hidden = false;
+      return;
+    }
+
+    deliveryDateInput.min = new Date().toISOString().slice(0, 10);
+
+    function formatPrice(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? `£${n.toFixed(2)}` : escapeHtml(value);
+    }
+
+    function cartItemRowHtml(item) {
+      return `
+        <article class="cart-item" data-item-id="${item.id}">
+          <div class="cart-item-info">
+            <h3>${escapeHtml(item.product.name)}</h3>
+            <p class="cart-item-meta">
+              ${formatPrice(item.product.current_price)} / ${escapeHtml(item.product.unit)}
+              &middot; ${escapeHtml(item.product.producer_name)}
+            </p>
+          </div>
+          <div class="cart-item-controls">
+            <input
+              type="number" min="1" max="${item.product.stock_quantity}" value="${item.quantity}"
+              class="qty-input cart-qty-input" data-item-id="${item.id}"
+              data-stock="${item.product.stock_quantity}"
+              aria-label="Quantity for ${escapeHtml(item.product.name)}"
+            >
+            <span class="cart-line-total">${formatPrice(item.line_total)}</span>
+            <button type="button" class="btn-link remove-btn" data-item-id="${item.id}">Remove</button>
+          </div>
+          <p class="cart-item-feedback" data-feedback-for="${item.id}" hidden></p>
+        </article>
+      `;
+    }
+
+    function renderCart(cart) {
+      if (!cart.items.length) {
+        listEl.innerHTML = '';
+        summaryEl.hidden = true;
+        checkoutSection.hidden = true;
+        statusEl.textContent = 'Your basket is empty.';
+        return;
+      }
+
+      statusEl.textContent = '';
+      listEl.innerHTML = cart.items.map(cartItemRowHtml).join('');
+      summaryEl.hidden = false;
+      totalAmountEl.textContent = formatPrice(cart.total);
+      checkoutSection.hidden = false;
+    }
+
+    async function loadCart() {
+      statusEl.textContent = 'Loading your basket…';
+      try {
+        const res = await fetch(`/api/cart/${customerId}/`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Request failed');
+        renderCart(await res.json());
+      } catch (err) {
+        statusEl.textContent = 'Could not load your basket right now. Please try again.';
+        console.error(err);
+      }
+    }
+
+    listEl.addEventListener('change', async (event) => {
+      const input = event.target.closest('.cart-qty-input');
+      if (!input) return;
+
+      const itemId = input.dataset.itemId;
+      const feedback = listEl.querySelector(`.cart-item-feedback[data-feedback-for="${itemId}"]`);
+      const stock = parseInt(input.dataset.stock, 10);
+      let quantity = Math.max(1, parseInt(input.value, 10) || 1);
+
+      if (Number.isFinite(stock) && quantity > stock) {
+        quantity = stock;
+        feedback.textContent = `Only ${stock} in stock — quantity reduced.`;
+        feedback.hidden = false;
+      } else {
+        feedback.hidden = true;
+      }
+      input.value = quantity;
+
+      try {
+        const res = await apiFetch(`/api/cart/items/${itemId}/`, {
+          method: 'PATCH',
+          body: JSON.stringify({ quantity }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+          renderCart(data);
+        } else {
+          feedback.textContent = extractErrorMessage(data, 'Could not update quantity.');
+          feedback.hidden = false;
+        }
+      } catch (err) {
+        feedback.textContent = 'Network error — please try again.';
+        feedback.hidden = false;
+      }
+    });
+
+    listEl.addEventListener('click', async (event) => {
+      const btn = event.target.closest('.remove-btn');
+      if (!btn) return;
+
+      const itemId = btn.dataset.itemId;
+      btn.disabled = true;
+
+      try {
+        const res = await apiFetch(`/api/cart/items/${itemId}/`, { method: 'DELETE' });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+          renderCart(data);
+        } else {
+          btn.disabled = false;
+          const feedback = listEl.querySelector(`.cart-item-feedback[data-feedback-for="${itemId}"]`);
+          feedback.textContent = extractErrorMessage(data, 'Could not remove this item.');
+          feedback.hidden = false;
+        }
+      } catch (err) {
+        btn.disabled = false;
+      }
+    });
+
+    checkoutForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      checkoutError.hidden = true;
+      checkoutSubmit.disabled = true;
+      checkoutSubmit.textContent = 'Placing order…';
+
+      const payload = {
+        delivery_date: deliveryDateInput.value,
+      };
+      const address = document.getElementById('delivery-address').value.trim();
+      if (address) payload.delivery_address = address;
+
+      try {
+        const res = await apiFetch('/api/orders/create/', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok) {
+          statusEl.textContent = 'Order placed — taking you to your orders…';
+          listEl.innerHTML = '';
+          summaryEl.hidden = true;
+          checkoutSection.hidden = true;
+          setTimeout(() => { window.location.href = '/market/orders/'; }, 900);
+          return;
+        }
+
+        checkoutError.textContent = extractErrorMessage(data, 'Could not place your order.');
+        checkoutError.hidden = false;
+      } catch (err) {
+        checkoutError.textContent = 'Network error — please try again.';
+        checkoutError.hidden = false;
+      } finally {
+        checkoutSubmit.disabled = false;
+        checkoutSubmit.textContent = 'Place order';
+      }
+    });
+
+    loadCart();
+  });
+</script>
+{% endblock %}
