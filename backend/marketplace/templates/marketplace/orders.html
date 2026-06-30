@@ -1,8 +1,236 @@
-<!DOCTYPE html>
-<html>
-<head><title>Bristol Food Network</title></head>
-<body>
-<h1>orders page placeholder</h1>
-<p>This template will be built out in Sprint 5.</p>
-</body>
-</html>
+{% extends 'marketplace/base.html' %}
+{% load static %}
+
+{% block title %}My Orders &middot; Bristol Food Network{% endblock %}
+
+{% block content %}
+<section class="orders-page">
+
+  <header class="orders-header">
+    <h1>My Orders</h1>
+  </header>
+
+  <div id="orders-guest-notice" class="cart-empty" hidden>
+    <p>You need to be logged in as a customer to view your orders.</p>
+    <a class="btn-primary" href="/market/login/">Log in</a>
+  </div>
+
+  <div id="orders-content">
+    <form id="orders-filter-form" class="filter-bar" novalidate>
+      <select id="producer-filter" aria-label="Filter by producer">
+        <option value="">All producers</option>
+      </select>
+      <button type="submit" class="btn-secondary">Filter</button>
+    </form>
+
+    <p id="orders-status" class="catalogue-status" role="status" aria-live="polite"></p>
+    <div id="order-list" class="order-list"></div>
+  </div>
+
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const isCustomer = document.body.dataset.isCustomer === 'true';
+
+    const guestNotice = document.getElementById('orders-guest-notice');
+    const contentEl = document.getElementById('orders-content');
+
+    if (!isCustomer) {
+      guestNotice.hidden = false;
+      contentEl.hidden = true;
+      return;
+    }
+
+    const statusEl = document.getElementById('orders-status');
+    const listEl = document.getElementById('order-list');
+    const producerFilter = document.getElementById('producer-filter');
+    const filterForm = document.getElementById('orders-filter-form');
+
+    let allOrders = [];
+
+    const STATUS_LABELS = {
+      pending: 'Pending', confirmed: 'Confirmed', ready: 'Ready',
+      delivered: 'Delivered', cancelled: 'Cancelled',
+    };
+
+    function formatPrice(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? `£${n.toFixed(2)}` : escapeHtml(value);
+    }
+
+    function formatDate(isoDate) {
+      if (!isoDate) return '';
+      const date = new Date(isoDate);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function suborderItemRowHtml(item) {
+      return `<li>${item.quantity} &times; ${escapeHtml(item.product_name)} &mdash; ${formatPrice(item.item_total)}</li>`;
+    }
+
+    function suborderBlockHtml(suborder) {
+      return `
+        <div class="order-suborder-block" data-suborder-id="${suborder.id}">
+          <div class="order-suborder-header">
+            <h4>${escapeHtml(suborder.producer_name)}</h4>
+            <span class="badge status-badge status-${suborder.status}">${STATUS_LABELS[suborder.status] || suborder.status}</span>
+          </div>
+          <ul class="order-items-list">${suborder.items.map(suborderItemRowHtml).join('')}</ul>
+          <p class="order-suborder-meta">
+            Subtotal ${formatPrice(suborder.subtotal)}
+            ${suborder.delivery_date ? ' &middot; Deliver by ' + formatDate(suborder.delivery_date) : ''}
+          </p>
+        </div>
+      `;
+    }
+
+    function orderCardHtml(order, filterProducer) {
+      const visibleSuborders = filterProducer
+        ? order.suborders.filter((s) => s.producer_name === filterProducer)
+        : order.suborders;
+      const producerNames = order.suborders.map((s) => s.producer_name).join(', ');
+      const suborderIds = visibleSuborders.map((s) => s.id).join(',');
+
+      return `
+        <article class="order-card" data-order-id="${order.id}">
+          <div class="order-card-top">
+            <div>
+              <h2>Order #${order.id}</h2>
+              <p class="order-meta">
+                Placed ${formatDate(order.created_at)} &middot; ${escapeHtml(producerNames)}
+              </p>
+              <p class="order-meta">${escapeHtml(order.delivery_address)}</p>
+            </div>
+            <div class="order-card-top-right">
+              <span class="badge status-badge status-${order.status}">${STATUS_LABELS[order.status] || order.status}</span>
+              <p class="order-card-total">${formatPrice(order.total_amount)}</p>
+            </div>
+          </div>
+
+          ${filterProducer ? `<p class="order-filter-note">Showing items from ${escapeHtml(filterProducer)} only</p>` : ''}
+
+          <div class="order-suborders">
+            ${visibleSuborders.map(suborderBlockHtml).join('')}
+          </div>
+
+          <p class="order-card-footnote">
+            Food miles for this order: ${Number(order.food_miles_total).toFixed(1)} miles
+            &middot; Payment ${escapeHtml(order.payment_status)}
+          </p>
+
+          <p class="reorder-feedback" data-feedback-for="${order.id}" hidden></p>
+          <button
+            type="button" class="btn-secondary reorder-btn"
+            data-order-id="${order.id}" data-suborder-ids="${suborderIds}"
+          >${filterProducer ? `Reorder ${escapeHtml(filterProducer)} items` : 'Reorder these items'}</button>
+        </article>
+      `;
+    }
+
+    function populateProducerFilter(orders) {
+      const names = new Set();
+      orders.forEach((order) => order.suborders.forEach((s) => names.add(s.producer_name)));
+      producerFilter.innerHTML = '<option value="">All producers</option>' +
+        Array.from(names).sort().map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    }
+
+    function renderOrders() {
+      const selectedProducer = producerFilter.value;
+      const filtered = selectedProducer
+        ? allOrders.filter((order) => order.suborders.some((s) => s.producer_name === selectedProducer))
+        : allOrders;
+
+      if (!filtered.length) {
+        listEl.innerHTML = '';
+        statusEl.textContent = allOrders.length
+          ? 'No orders match that producer.'
+          : "You haven't placed any orders yet.";
+        return;
+      }
+      statusEl.textContent = '';
+      listEl.innerHTML = filtered.map((order) => orderCardHtml(order, selectedProducer)).join('');
+    }
+
+    async function loadOrders() {
+      statusEl.textContent = 'Loading your orders…';
+      try {
+        const res = await fetch('/api/orders/', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Request failed');
+        allOrders = await res.json();
+        // Backend already orders by -created_at, but sort defensively
+        // in case that ever changes, since "most recent first" is a
+        // stated requirement, not just incidental behaviour.
+        allOrders.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        populateProducerFilter(allOrders);
+        renderOrders();
+      } catch (err) {
+        statusEl.textContent = 'Could not load your orders right now.';
+        console.error(err);
+      }
+    }
+
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      renderOrders();
+    });
+
+    listEl.addEventListener('click', async (event) => {
+      const btn = event.target.closest('.reorder-btn');
+      if (!btn) return;
+
+      const orderId = btn.dataset.orderId;
+      const visibleSuborderIds = btn.dataset.suborderIds.split(',').filter(Boolean).map(Number);
+      const order = allOrders.find((o) => String(o.id) === orderId);
+      const feedback = listEl.querySelector(`.reorder-feedback[data-feedback-for="${orderId}"]`);
+      if (!order) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Adding to basket…';
+      feedback.hidden = true;
+
+      const relevantSuborders = order.suborders.filter((s) => visibleSuborderIds.includes(s.id));
+      const items = relevantSuborders.flatMap((s) => s.items);
+      const failures = [];
+      let addedCount = 0;
+
+      for (const item of items) {
+        try {
+          const res = await apiFetch('/api/cart/add/', {
+            method: 'POST',
+            body: JSON.stringify({ product_id: item.product, quantity: item.quantity }),
+          });
+          if (res.ok) {
+            addedCount += 1;
+          } else {
+            const data = await res.json().catch(() => null);
+            failures.push(`${item.product_name}: ${extractErrorMessage(data, 'unavailable')}`);
+          }
+        } catch (err) {
+          failures.push(`${item.product_name}: network error`);
+        }
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Reorder these items';
+
+      if (addedCount && !failures.length) {
+        feedback.textContent = `Added ${addedCount} item${addedCount === 1 ? '' : 's'} to your basket.`;
+        feedback.classList.remove('feedback-error');
+      } else if (addedCount && failures.length) {
+        feedback.innerHTML = `Added ${addedCount} item${addedCount === 1 ? '' : 's'}. Could not add: ${failures.map(escapeHtml).join('; ')}`;
+        feedback.classList.add('feedback-error');
+      } else {
+        feedback.innerHTML = `Could not reorder: ${failures.map(escapeHtml).join('; ')}`;
+        feedback.classList.add('feedback-error');
+      }
+      feedback.hidden = false;
+    });
+
+    loadOrders();
+  });
+</script>
+{% endblock %}

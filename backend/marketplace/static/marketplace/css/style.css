@@ -999,3 +999,117 @@ code {
   .producer-product-summary { flex-wrap: wrap; }
   .order-card-header { flex-direction: column; }
 }
+
+/* ---------- Orders page ---------- */
+
+.orders-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.orders-header h1 {
+  font-size: 1.7rem;
+  margin-bottom: 1rem;
+}
+
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.order-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.3rem;
+  box-shadow: var(--shadow);
+}
+
+.order-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.order-card-top h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.2rem;
+}
+
+.order-card-top-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.order-card-total {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--green-dark);
+  margin: 0.4rem 0 0;
+}
+
+.order-filter-note {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 0 0 0.6rem;
+}
+
+.order-suborders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.order-suborder-block {
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+}
+
+.order-suborder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.order-suborder-header h4 {
+  font-size: 0.92rem;
+  margin: 0;
+  color: var(--green-dark);
+}
+
+.order-suborder-meta {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin: 0.3rem 0 0;
+}
+
+.order-card-footnote {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 0.9rem 0 0;
+}
+
+.reorder-feedback {
+  font-size: 0.84rem;
+  color: var(--green-dark);
+  margin: 0.6rem 0 0;
+}
+.reorder-feedback.feedback-error { color: var(--red); }
+
+.order-card .reorder-btn {
+  margin-top: 0.7rem;
+}
+
+@media (max-width: 540px) {
+  .order-card-top { flex-direction: column; }
+  .order-card-top-right { text-align: left; }
+}

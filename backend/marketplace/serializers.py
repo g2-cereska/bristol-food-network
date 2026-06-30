@@ -284,7 +284,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'customer', 'status', 'delivery_address', 'delivery_date',
             'total_amount', 'commission_amount', 'food_miles_total',
-            'payment_status', 'suborders',
+            'payment_status', 'suborders', 'created_at',
         ]
 
 
