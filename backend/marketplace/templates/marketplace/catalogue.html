@@ -102,6 +102,9 @@
 
       return `
         <article class="product-card">
+          ${product.image
+            ? `<img src="${product.image}" alt="${escapeHtml(product.name)}" class="product-card-image">`
+            : '<div class="product-card-image product-card-image-empty"></div>'}
           <div class="card-top">${badges}</div>
           <h3>${escapeHtml(product.name)}</h3>
           <p class="producer-line">
