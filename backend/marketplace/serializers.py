@@ -158,16 +158,22 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug']
 
 
+class ProducerDeliveryDateSerializer(serializers.Serializer):
+    producer_id = serializers.IntegerField()
+    delivery_date = serializers.DateField()
+
+
 class ProductSerializer(serializers.ModelSerializer):
     current_price = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
     is_visible = serializers.BooleanField(read_only=True)
     producer_name = serializers.CharField(source='producer.business_name', read_only=True)
+    producer_lead_time_hours = serializers.IntegerField(source='producer.lead_time_hours', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
 
     class Meta:
         model = Product
         fields = [
-            'id', 'producer', 'producer_name', 'category', 'category_name', 'name',
+            'id', 'producer', 'producer_name', 'producer_lead_time_hours', 'category', 'category_name', 'name',
             'description', 'price', 'current_price', 'unit', 'stock_quantity',
             'availability', 'harvest_date', 'farm_origin', 'organic_certified',
             'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible',
@@ -284,13 +290,15 @@ class OrderCreateSerializer(serializers.Serializer):
     The cart may contain products from several producers — this serializer
     splits the order into one ProducerSubOrder per producer, applies the
     5% network commission, calculates food miles per producer, and
-    records a sandbox payment. Everything happens inside one atomic
-    transaction so a failure partway through never leaves a half-created
-    order in the database.
+    records a sandbox payment. Each producer gets their own delivery date,
+    validated against that producer's individual lead_time_hours, since
+    different producers may need different amounts of notice. Everything
+    happens inside one atomic transaction so a failure partway through
+    never leaves a half-created order in the database.
     """
     customer_id = serializers.IntegerField()
     delivery_address = serializers.CharField(required=False, allow_blank=True)
-    delivery_date = serializers.DateField()
+    delivery_dates = ProducerDeliveryDateSerializer(many=True)
     payment_method = serializers.CharField(required=False, default='sandbox')
 
     def validate(self, attrs):
@@ -303,11 +311,38 @@ class OrderCreateSerializer(serializers.Serializer):
         if not cart or not cart.items.exists():
             raise serializers.ValidationError('Cart is empty.')
 
-        if attrs['delivery_date'] < timezone.localdate():
-            raise serializers.ValidationError('Delivery date cannot be in the past.')
+        cart_items = list(cart.items.select_related('product__producer'))
+        producer_ids_in_cart = {item.product.producer_id for item in cart_items}
+
+        date_by_producer = {
+            entry['producer_id']: entry['delivery_date']
+            for entry in attrs['delivery_dates']
+        }
+
+        missing_ids = producer_ids_in_cart - set(date_by_producer.keys())
+        if missing_ids:
+            missing_names = ProducerProfile.objects.filter(id__in=missing_ids).values_list(
+                'business_name', flat=True
+            )
+            raise serializers.ValidationError(
+                f"A delivery date is required for: {', '.join(missing_names)}."
+            )
+
+        today = timezone.localdate()
+        producers = ProducerProfile.objects.filter(id__in=date_by_producer.keys())
+        for producer in producers:
+            chosen_date = date_by_producer[producer.id]
+            lead_days = (producer.lead_time_hours + 23) // 24
+            min_date = today + timedelta(days=lead_days)
+            if chosen_date < min_date:
+                raise serializers.ValidationError(
+                    f"{producer.business_name} needs at least {producer.lead_time_hours} hours' "
+                    f"notice \u2014 earliest available delivery date is {min_date.isoformat()}."
+                )
 
         attrs['customer'] = customer
         attrs['cart'] = cart
+        attrs['date_by_producer'] = date_by_producer
         if not attrs.get('delivery_address'):
             attrs['delivery_address'] = customer.address
         return attrs
@@ -316,12 +351,13 @@ class OrderCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         customer = validated_data['customer']
         cart = validated_data['cart']
+        date_by_producer = validated_data['date_by_producer']
         cart_items = list(cart.items.select_related('product__producer'))
 
         order = Order.objects.create(
             customer=customer,
             delivery_address=validated_data['delivery_address'],
-            delivery_date=validated_data['delivery_date'],
+            delivery_date=max(date_by_producer.values()),
             payment_status='pending',
         )
 
@@ -343,7 +379,7 @@ class OrderCreateSerializer(serializers.Serializer):
                 suborder = ProducerSubOrder.objects.create(
                     order=order,
                     producer=producer,
-                    delivery_date=validated_data['delivery_date'],
+                    delivery_date=date_by_producer[producer.id],
                 )
                 suborders_by_producer[producer.id] = suborder
                 distance = Decimal(str(postcode_distance_miles(producer.postcode, customer.postcode)))

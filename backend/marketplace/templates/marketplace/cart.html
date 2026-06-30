@@ -33,8 +33,7 @@
         placeholder="Leave blank to use your saved address"
       ></textarea>
 
-      <label for="delivery-date">Delivery date</label>
-      <input type="date" id="delivery-date" required>
+      <div id="producer-delivery-dates" class="producer-delivery-dates"></div>
 
       <p id="checkout-error" class="form-error" hidden></p>
 
@@ -58,7 +57,7 @@
     const totalAmountEl = document.getElementById('cart-total-amount');
     const checkoutSection = document.getElementById('checkout-section');
     const checkoutForm = document.getElementById('checkout-form');
-    const deliveryDateInput = document.getElementById('delivery-date');
+    const deliveryDatesContainer = document.getElementById('producer-delivery-dates');
     const checkoutError = document.getElementById('checkout-error');
     const checkoutSubmit = document.getElementById('checkout-submit');
 
@@ -67,11 +66,38 @@
       return;
     }
 
-    deliveryDateInput.min = new Date().toISOString().slice(0, 10);
-
     function formatPrice(value) {
       const n = Number(value);
       return Number.isFinite(n) ? `£${n.toFixed(2)}` : escapeHtml(value);
+    }
+
+    // Earliest selectable date for a given producer's lead time, used as
+    // the date input's min — e.g. 48 hours' notice means "today + 2 days".
+    function minDateForLeadTime(hours) {
+      const leadDays = Math.ceil((Number(hours) || 0) / 24);
+      const date = new Date();
+      date.setDate(date.getDate() + leadDays);
+      return date.toISOString().slice(0, 10);
+    }
+
+    function groupItemsByProducer(items) {
+      const groups = new Map();
+      for (const item of items) {
+        const producerId = item.product.producer;
+        if (!groups.has(producerId)) {
+          groups.set(producerId, {
+            producerId,
+            producerName: item.product.producer_name,
+            leadTimeHours: item.product.producer_lead_time_hours,
+            items: [],
+            subtotal: 0,
+          });
+        }
+        const group = groups.get(producerId);
+        group.items.push(item);
+        group.subtotal += Number(item.line_total);
+      }
+      return Array.from(groups.values());
     }
 
     function cartItemRowHtml(item) {
@@ -79,10 +105,7 @@
         <article class="cart-item" data-item-id="${item.id}">
           <div class="cart-item-info">
             <h3>${escapeHtml(item.product.name)}</h3>
-            <p class="cart-item-meta">
-              ${formatPrice(item.product.current_price)} / ${escapeHtml(item.product.unit)}
-              &middot; ${escapeHtml(item.product.producer_name)}
-            </p>
+            <p class="cart-item-meta">${formatPrice(item.product.current_price)} / ${escapeHtml(item.product.unit)}</p>
           </div>
           <div class="cart-item-controls">
             <input
@@ -99,6 +122,45 @@
       `;
     }
 
+    function producerGroupHtml(group) {
+      return `
+        <section class="cart-producer-group">
+          <h2 class="cart-producer-name">${escapeHtml(group.producerName)}</h2>
+          <p class="cart-producer-lead">Needs at least ${group.leadTimeHours} hours&rsquo; notice before delivery</p>
+          ${group.items.map(cartItemRowHtml).join('')}
+          <p class="cart-producer-subtotal">Subtotal: ${formatPrice(group.subtotal)}</p>
+        </section>
+      `;
+    }
+
+    function captureDeliveryDates() {
+      const values = {};
+      deliveryDatesContainer.querySelectorAll('.delivery-date-input').forEach((input) => {
+        if (input.value) values[input.dataset.producerId] = input.value;
+      });
+      return values;
+    }
+
+    function renderDeliveryDateInputs(groups, preservedDates) {
+      deliveryDatesContainer.innerHTML = groups.map((group) => {
+        const minDate = minDateForLeadTime(group.leadTimeHours);
+        const preserved = preservedDates[group.producerId] || '';
+        return `
+          <div class="delivery-date-row" data-producer-id="${group.producerId}">
+            <label for="delivery-date-${group.producerId}">
+              ${escapeHtml(group.producerName)} delivery date
+              <span class="lead-time-note">(min. ${group.leadTimeHours}h notice)</span>
+            </label>
+            <input
+              type="date" id="delivery-date-${group.producerId}"
+              class="delivery-date-input" data-producer-id="${group.producerId}"
+              min="${minDate}" value="${preserved}" required
+            >
+          </div>
+        `;
+      }).join('');
+    }
+
     function renderCart(cart) {
       if (!cart.items.length) {
         listEl.innerHTML = '';
@@ -108,11 +170,14 @@
         return;
       }
 
+      const preservedDates = captureDeliveryDates();
       statusEl.textContent = '';
-      listEl.innerHTML = cart.items.map(cartItemRowHtml).join('');
+      const groups = groupItemsByProducer(cart.items);
+      listEl.innerHTML = groups.map(producerGroupHtml).join('');
       summaryEl.hidden = false;
       totalAmountEl.textContent = formatPrice(cart.total);
       checkoutSection.hidden = false;
+      renderDeliveryDateInputs(groups, preservedDates);
     }
 
     async function loadCart() {
@@ -189,12 +254,25 @@
     checkoutForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       checkoutError.hidden = true;
+
+      const dateInputs = deliveryDatesContainer.querySelectorAll('.delivery-date-input');
+      const deliveryDates = [];
+      for (const input of dateInputs) {
+        if (!input.value) {
+          checkoutError.textContent = 'Please choose a delivery date for every producer.';
+          checkoutError.hidden = false;
+          return;
+        }
+        deliveryDates.push({
+          producer_id: Number(input.dataset.producerId),
+          delivery_date: input.value,
+        });
+      }
+
       checkoutSubmit.disabled = true;
       checkoutSubmit.textContent = 'Placing order…';
 
-      const payload = {
-        delivery_date: deliveryDateInput.value,
-      };
+      const payload = { delivery_dates: deliveryDates };
       const address = document.getElementById('delivery-address').value.trim();
       if (address) payload.delivery_address = address;
 
