@@ -173,10 +173,10 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'producer', 'producer_name', 'producer_lead_time_hours', 'category', 'category_name', 'name',
-            'description', 'price', 'current_price', 'unit', 'stock_quantity',
-            'availability', 'harvest_date', 'farm_origin', 'organic_certified',
-            'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible',
+        'id', 'producer', 'producer_name', 'producer_lead_time_hours', 'category', 'category_name', 'name',
+        'description', 'price', 'current_price', 'unit', 'stock_quantity',
+        'availability', 'harvest_date', 'farm_origin', 'organic_certified',
+        'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible', 'image',
         ]
 
     def validate_allergen_info(self, value):
@@ -262,12 +262,17 @@ class OrderItemSerializer(serializers.ModelSerializer):
 class ProducerSubOrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     producer_name = serializers.CharField(source='producer.business_name', read_only=True)
+    customer_name = serializers.CharField(source='order.customer.user.username', read_only=True)
+    customer_phone = serializers.CharField(source='order.customer.phone', read_only=True)
+    delivery_address = serializers.CharField(source='order.delivery_address', read_only=True)
+    order_created_at = serializers.DateTimeField(source='order.created_at', read_only=True)
 
     class Meta:
         model = ProducerSubOrder
         fields = [
             'id', 'order', 'producer', 'producer_name', 'status', 'subtotal',
             'producer_payout', 'delivery_date', 'delivery_notes', 'items',
+            'customer_name', 'customer_phone', 'delivery_address', 'order_created_at',
         ]
 
 

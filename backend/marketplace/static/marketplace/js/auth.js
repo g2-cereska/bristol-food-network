@@ -24,12 +24,17 @@ async function ensureCsrfCookie() {
 /**
  * Wrapper around fetch() that attaches the CSRF header and session
  * cookie automatically. Use this for every mutating API call.
+ *
+ * If the body is a FormData instance (e.g. a file upload), the
+ * Content-Type header is deliberately omitted — the browser sets its
+ * own multipart boundary, and overriding it would break the upload.
  */
 async function apiFetch(url, options = {}) {
   await ensureCsrfCookie();
+  const isFormData = options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
     'X-CSRFToken': getCookie('csrftoken'),
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {}),
   };
   return fetch(url, { ...options, headers, credentials: 'same-origin' });

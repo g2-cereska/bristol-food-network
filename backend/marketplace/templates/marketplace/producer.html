@@ -1,8 +1,513 @@
-<!DOCTYPE html>
-<html>
-<head><title>Bristol Food Network</title></head>
-<body>
-<h1>producer page placeholder</h1>
-<p>This template will be built out in Sprint 5.</p>
-</body>
-</html>
+{% extends 'marketplace/base.html' %}
+{% load static %}
+
+{% block title %}My Stall &middot; Bristol Food Network{% endblock %}
+
+{% block content %}
+<section class="producer-page">
+
+  <header class="producer-header">
+    <h1>My Stall</h1>
+  </header>
+
+  <div id="producer-guest-notice" class="cart-empty" hidden>
+    <p>You need to be logged in as a producer to manage a stall.</p>
+    <a class="btn-primary" href="/market/login/">Log in</a>
+  </div>
+
+  <div id="producer-dashboard">
+    <nav class="tab-bar" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="products" role="tab" aria-selected="true">My Products</button>
+      <button type="button" class="tab-btn" data-tab="orders" role="tab" aria-selected="false">Orders</button>
+      <button type="button" class="tab-btn" data-tab="settlements" role="tab" aria-selected="false">Settlements</button>
+    </nav>
+
+    <!-- ===================== PRODUCTS TAB ===================== -->
+    <section id="tab-products" class="tab-panel" role="tabpanel">
+
+      <details class="add-product-details">
+        <summary class="btn-secondary">Add new product</summary>
+        <form id="create-product-form" class="product-form" novalidate>
+          <div id="create-product-fields"></div>
+          <p class="form-error" id="create-product-error" hidden></p>
+          <button type="submit" class="btn-primary" id="create-product-submit">Add product</button>
+        </form>
+      </details>
+
+      <p id="products-status" class="catalogue-status" role="status" aria-live="polite"></p>
+      <div id="producer-product-list" class="producer-product-list"></div>
+    </section>
+
+    <!-- ===================== ORDERS TAB ===================== -->
+    <section id="tab-orders" class="tab-panel" hidden role="tabpanel">
+      <p id="orders-status" class="catalogue-status" role="status" aria-live="polite"></p>
+      <div id="producer-order-list" class="producer-order-list"></div>
+    </section>
+
+    <!-- ===================== SETTLEMENTS TAB ===================== -->
+    <section id="tab-settlements" class="tab-panel" hidden role="tabpanel">
+      <p class="settlements-intro">
+        Generate a settlement summary for the current period. Each request recalculates
+        the figures for the active settlement window — there is no separate history list yet.
+      </p>
+      <button type="button" class="btn-primary" id="generate-settlement-btn">Generate settlement</button>
+      <p id="settlement-status" class="catalogue-status" role="status" aria-live="polite"></p>
+      <div id="settlement-result"></div>
+    </section>
+  </div>
+
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const isProducer = document.body.dataset.isProducer === 'true';
+    const producerId = document.body.dataset.producerId;
+
+    const guestNotice = document.getElementById('producer-guest-notice');
+    const dashboard = document.getElementById('producer-dashboard');
+
+    if (!isProducer || !producerId) {
+      guestNotice.hidden = false;
+      dashboard.hidden = true;
+      return;
+    }
+
+    const AVAILABILITY_CHOICES = [
+      ['in_season', 'In Season'],
+      ['available', 'Available'],
+      ['out_of_season', 'Out of Season'],
+      ['unavailable', 'Unavailable'],
+    ];
+    const STATUS_ORDER = ['pending', 'confirmed', 'ready', 'delivered'];
+    const STATUS_LABELS = {
+      pending: 'Pending', confirmed: 'Confirmed', ready: 'Ready',
+      delivered: 'Delivered', cancelled: 'Cancelled',
+    };
+
+    let categories = [];
+
+    function formatPrice(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? `£${n.toFixed(2)}` : escapeHtml(value);
+    }
+
+    function formatDate(isoDate) {
+      if (!isoDate) return '';
+      const date = new Date(isoDate);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    /* ---------------- Tabs ---------------- */
+
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanels = {
+      products: document.getElementById('tab-products'),
+      orders: document.getElementById('tab-orders'),
+      settlements: document.getElementById('tab-settlements'),
+    };
+    let ordersLoadedOnce = false;
+
+    tabButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tabButtons.forEach((b) => {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+        });
+        Object.entries(tabPanels).forEach(([name, panel]) => {
+          panel.hidden = name !== btn.dataset.tab;
+        });
+        if (btn.dataset.tab === 'orders' && !ordersLoadedOnce) {
+          ordersLoadedOnce = true;
+          loadOrders();
+        }
+      });
+    });
+
+    /* ---------------- Product form (shared by create + edit) ---------------- */
+
+    function productFormFieldsHtml(product) {
+      const p = product || {};
+      const categoryOptions = categories.map((c) => `
+        <option value="${c.id}" ${p.category === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>
+      `).join('');
+      const availabilityOptions = AVAILABILITY_CHOICES.map(([value, label]) => `
+        <option value="${value}" ${p.availability === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+      `).join('');
+
+      return `
+        <label>Product name
+          <input type="text" name="name" required value="${escapeHtml(p.name || '')}">
+        </label>
+        <label>Category
+          <select name="category" required>
+            <option value="">Select a category&hellip;</option>
+            ${categoryOptions}
+          </select>
+        </label>
+        <label>Description
+          <textarea name="description" rows="2">${escapeHtml(p.description || '')}</textarea>
+        </label>
+        <div class="field-row">
+          <label>Price (&pound;)
+            <input type="number" name="price" step="0.01" min="0" required value="${p.price || ''}">
+          </label>
+          <label>Unit
+            <input type="text" name="unit" placeholder="kg, dozen, litre&hellip;" required value="${escapeHtml(p.unit || '')}">
+          </label>
+        </div>
+        <div class="field-row">
+          <label>Stock quantity
+            <input type="number" name="stock_quantity" min="0" required value="${p.stock_quantity ?? ''}">
+          </label>
+          <label>Availability
+            <select name="availability">${availabilityOptions}</select>
+          </label>
+        </div>
+        <div class="field-row">
+          <label>Harvest date
+            <input type="date" name="harvest_date" value="${p.harvest_date || ''}">
+          </label>
+          <label>Best before
+            <input type="date" name="best_before" value="${p.best_before || ''}">
+          </label>
+        </div>
+        <label>Farm origin
+          <input type="text" name="farm_origin" value="${escapeHtml(p.farm_origin || '')}">
+        </label>
+        <label>Allergen information
+          <input type="text" name="allergen_info" placeholder="e.g. Contains nuts, dairy" value="${escapeHtml(p.allergen_info || '')}">
+        </label>
+        <div class="field-row">
+          <label>Grade
+            <input type="text" name="grade" maxlength="4" value="${escapeHtml(p.grade || 'A')}">
+          </label>
+          <label>Discount %
+            <input type="number" name="discount_percent" min="0" max="90" value="${p.discount_percent ?? 0}">
+          </label>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" name="organic_certified" ${p.organic_certified ? 'checked' : ''}>
+          Organic certified
+        </label>
+        <label>Product image ${product ? '(leave blank to keep current image)' : '(optional)'}
+          <input type="file" name="image" accept="image/*">
+        </label>
+        ${product && product.image
+          ? `<img src="${product.image}" alt="Current image of ${escapeHtml(product.name)}" class="current-image-preview">`
+          : ''}
+      `;
+    }
+
+    function buildFormData(form) {
+      const formData = new FormData();
+      const elements = form.elements;
+      for (const el of elements) {
+        if (!el.name) continue;
+        if (el.type === 'checkbox') {
+          formData.append(el.name, el.checked ? 'true' : 'false');
+        } else if (el.type === 'file') {
+          if (el.files.length) formData.append(el.name, el.files[0]);
+        } else if (el.value !== '') {
+          formData.append(el.name, el.value);
+        }
+      }
+      return formData;
+    }
+
+    /* ---------------- Create product ---------------- */
+
+    const createForm = document.getElementById('create-product-form');
+    const createFieldsContainer = document.getElementById('create-product-fields');
+    const createError = document.getElementById('create-product-error');
+    const createSubmit = document.getElementById('create-product-submit');
+
+    createForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      createError.hidden = true;
+      createSubmit.disabled = true;
+      createSubmit.textContent = 'Adding…';
+
+      try {
+        const res = await apiFetch('/api/products/', {
+          method: 'POST',
+          body: buildFormData(createForm),
+        });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok) {
+          createForm.reset();
+          document.querySelector('.add-product-details').open = false;
+          loadProducts();
+        } else {
+          createError.textContent = extractErrorMessage(data, 'Could not add this product.');
+          createError.hidden = false;
+        }
+      } catch (err) {
+        createError.textContent = 'Network error — please try again.';
+        createError.hidden = false;
+      } finally {
+        createSubmit.disabled = false;
+        createSubmit.textContent = 'Add product';
+      }
+    });
+
+    /* ---------------- Product list + edit ---------------- */
+
+    const productListEl = document.getElementById('producer-product-list');
+    const productsStatus = document.getElementById('products-status');
+
+    function productCardHtml(product) {
+      const badge = product.is_visible
+        ? '<span class="badge badge-organic">Visible to customers</span>'
+        : '<span class="badge badge-category">Hidden from customers</span>';
+
+      return `
+        <article class="producer-product-card" data-product-id="${product.id}">
+          <div class="producer-product-summary">
+            ${product.image ? `<img src="${product.image}" alt="${escapeHtml(product.name)}" class="product-thumb">` : '<div class="product-thumb product-thumb-empty"></div>'}
+            <div class="producer-product-info">
+              <h3>${escapeHtml(product.name)}</h3>
+              <p class="producer-product-meta">
+                ${escapeHtml(product.category_name)} &middot; ${formatPrice(product.current_price)} / ${escapeHtml(product.unit)}
+                &middot; ${product.stock_quantity} ${escapeHtml(product.unit)} in stock
+              </p>
+              ${badge}
+            </div>
+            <button type="button" class="btn-secondary toggle-edit-btn" data-product-id="${product.id}">Edit</button>
+          </div>
+          <form class="product-form edit-product-form" data-product-id="${product.id}" hidden>
+            ${productFormFieldsHtml(product)}
+            <p class="form-error" data-error-for="${product.id}" hidden></p>
+            <div class="edit-actions">
+              <button type="submit" class="btn-primary">Save changes</button>
+              <button type="button" class="btn-link cancel-edit-btn" data-product-id="${product.id}">Cancel</button>
+            </div>
+          </form>
+        </article>
+      `;
+    }
+
+    async function loadProducts() {
+      productsStatus.textContent = 'Loading your products…';
+      try {
+        const res = await fetch(`/api/products/?producer=${producerId}`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Request failed');
+        const products = await res.json();
+        if (!products.length) {
+          productsStatus.textContent = "You haven't listed any products yet.";
+          productListEl.innerHTML = '';
+          return;
+        }
+        productsStatus.textContent = '';
+        productListEl.innerHTML = products.map(productCardHtml).join('');
+      } catch (err) {
+        productsStatus.textContent = 'Could not load your products right now.';
+        console.error(err);
+      }
+    }
+
+    productListEl.addEventListener('click', (event) => {
+      const toggleBtn = event.target.closest('.toggle-edit-btn');
+      const cancelBtn = event.target.closest('.cancel-edit-btn');
+      const id = (toggleBtn || cancelBtn || {}).dataset?.productId;
+      if (!id) return;
+      const form = productListEl.querySelector(`.edit-product-form[data-product-id="${id}"]`);
+      if (toggleBtn) form.hidden = !form.hidden;
+      if (cancelBtn) form.hidden = true;
+    });
+
+    productListEl.addEventListener('submit', async (event) => {
+      const form = event.target.closest('.edit-product-form');
+      if (!form) return;
+      event.preventDefault();
+
+      const id = form.dataset.productId;
+      const errorEl = productListEl.querySelector(`[data-error-for="${id}"]`);
+      errorEl.hidden = true;
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving…';
+
+      try {
+        const res = await apiFetch(`/api/products/${id}/`, {
+          method: 'PATCH',
+          body: buildFormData(form),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+          loadProducts();
+        } else {
+          errorEl.textContent = extractErrorMessage(data, 'Could not save changes.');
+          errorEl.hidden = false;
+        }
+      } catch (err) {
+        errorEl.textContent = 'Network error — please try again.';
+        errorEl.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save changes';
+      }
+    });
+
+    /* ---------------- Orders tab ---------------- */
+
+    const orderListEl = document.getElementById('producer-order-list');
+    const ordersStatus = document.getElementById('orders-status');
+
+    function orderItemRowHtml(item) {
+      return `
+        <li>${item.quantity} &times; ${escapeHtml(item.product_name)} &mdash; ${formatPrice(item.item_total)}</li>
+      `;
+    }
+
+    function suborderCardHtml(suborder) {
+      const currentIndex = STATUS_ORDER.indexOf(suborder.status);
+      const nextStatus = currentIndex >= 0 && currentIndex < STATUS_ORDER.length - 1
+        ? STATUS_ORDER[currentIndex + 1]
+        : null;
+      const canCancel = suborder.status !== 'delivered' && suborder.status !== 'cancelled';
+
+      const advanceBtn = nextStatus
+        ? `<button type="button" class="btn-primary advance-status-btn"
+             data-suborder-id="${suborder.id}" data-next-status="${nextStatus}"
+           >Mark as ${STATUS_LABELS[nextStatus]}</button>`
+        : '';
+      const cancelBtn = canCancel
+        ? `<button type="button" class="btn-link cancel-status-btn" data-suborder-id="${suborder.id}">Cancel order</button>`
+        : '';
+
+      return `
+        <article class="producer-order-card" data-suborder-id="${suborder.id}">
+          <div class="order-card-header">
+            <div>
+              <h3>Order #${suborder.order} &middot; ${escapeHtml(suborder.customer_name)}</h3>
+              <p class="order-meta">
+                Ordered ${formatDate(suborder.order_created_at)} &middot;
+                Deliver by ${formatDate(suborder.delivery_date)}
+                ${suborder.customer_phone ? ' &middot; ' + escapeHtml(suborder.customer_phone) : ''}
+              </p>
+              <p class="order-meta">${escapeHtml(suborder.delivery_address)}</p>
+            </div>
+            <span class="badge status-badge status-${suborder.status}">${STATUS_LABELS[suborder.status]}</span>
+          </div>
+          <ul class="order-items-list">${suborder.items.map(orderItemRowHtml).join('')}</ul>
+          <p class="order-totals">
+            Subtotal ${formatPrice(suborder.subtotal)} &middot; Your payout ${formatPrice(suborder.producer_payout)}
+          </p>
+          <p class="order-status-feedback" data-feedback-for="${suborder.id}" hidden></p>
+          <div class="order-actions">${advanceBtn}${cancelBtn}</div>
+        </article>
+      `;
+    }
+
+    async function loadOrders() {
+      ordersStatus.textContent = 'Loading your orders…';
+      try {
+        const res = await fetch(`/api/producer-orders/${producerId}/`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Request failed');
+        const suborders = await res.json();
+        if (!suborders.length) {
+          ordersStatus.textContent = 'No orders yet.';
+          orderListEl.innerHTML = '';
+          return;
+        }
+        suborders.sort((a, b) => (a.delivery_date || '').localeCompare(b.delivery_date || ''));
+        ordersStatus.textContent = '';
+        orderListEl.innerHTML = suborders.map(suborderCardHtml).join('');
+      } catch (err) {
+        ordersStatus.textContent = 'Could not load your orders right now.';
+        console.error(err);
+      }
+    }
+
+    async function updateSuborderStatus(suborderId, newStatus) {
+      const feedback = orderListEl.querySelector(`[data-feedback-for="${suborderId}"]`);
+      feedback.hidden = true;
+      try {
+        const res = await apiFetch(`/api/producer-suborders/${suborderId}/status/`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: newStatus }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+          loadOrders();
+        } else {
+          feedback.textContent = extractErrorMessage(data, 'Could not update status.');
+          feedback.hidden = false;
+        }
+      } catch (err) {
+        feedback.textContent = 'Network error — please try again.';
+        feedback.hidden = false;
+      }
+    }
+
+    orderListEl.addEventListener('click', (event) => {
+      const advanceBtn = event.target.closest('.advance-status-btn');
+      const cancelBtn = event.target.closest('.cancel-status-btn');
+      if (advanceBtn) {
+        updateSuborderStatus(advanceBtn.dataset.suborderId, advanceBtn.dataset.nextStatus);
+      } else if (cancelBtn) {
+        if (confirm('Cancel this order? This cannot be undone.')) {
+          updateSuborderStatus(cancelBtn.dataset.suborderId, 'cancelled');
+        }
+      }
+    });
+
+    /* ---------------- Settlements tab ---------------- */
+
+    const settlementBtn = document.getElementById('generate-settlement-btn');
+    const settlementStatus = document.getElementById('settlement-status');
+    const settlementResult = document.getElementById('settlement-result');
+
+    settlementBtn.addEventListener('click', async () => {
+      settlementStatus.textContent = 'Generating…';
+      settlementResult.innerHTML = '';
+      settlementBtn.disabled = true;
+
+      try {
+        const res = await apiFetch(`/api/settlements/${producerId}/`, { method: 'POST', body: JSON.stringify({}) });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok) {
+          settlementStatus.textContent = '';
+          settlementResult.innerHTML = `
+            <div class="settlement-card">
+              <p class="settlement-period">${formatDate(data.week_start)} &ndash; ${formatDate(data.week_end)}</p>
+              <dl class="settlement-figures">
+                <dt>Orders total</dt><dd>${formatPrice(data.orders_total)}</dd>
+                <dt>Network commission</dt><dd>&minus;${formatPrice(data.commission_total)}</dd>
+                <dt>Your payout</dt><dd class="settlement-payout">${formatPrice(data.payout_total)}</dd>
+              </dl>
+              <p class="settlement-status-line">Status: ${escapeHtml(data.status)}</p>
+            </div>
+          `;
+        } else {
+          settlementStatus.textContent = extractErrorMessage(data, 'Could not generate settlement.');
+        }
+      } catch (err) {
+        settlementStatus.textContent = 'Network error — please try again.';
+      } finally {
+        settlementBtn.disabled = false;
+      }
+    });
+
+    /* ---------------- Init ---------------- */
+
+    async function init() {
+      try {
+        const res = await fetch('/api/categories/', { credentials: 'same-origin' });
+        categories = res.ok ? await res.json() : [];
+      } catch (err) {
+        categories = [];
+      }
+      createFieldsContainer.innerHTML = productFormFieldsHtml(null);
+      loadProducts();
+    }
+
+    init();
+  });
+</script>
+{% endblock %}

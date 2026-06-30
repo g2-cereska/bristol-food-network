@@ -68,6 +68,7 @@ class Product(TimeStampedModel):
     best_before = models.DateField(null=True, blank=True)
     grade = models.CharField(max_length=4, default='A')
     discount_percent = models.PositiveIntegerField(default=0)
+    image = models.ImageField(upload_to='products/', null=True, blank=True)
 
     class Meta:
         ordering = ['name']
