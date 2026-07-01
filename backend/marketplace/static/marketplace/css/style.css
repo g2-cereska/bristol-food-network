@@ -987,6 +987,26 @@ code {
   max-width: 60ch;
 }
 
+.settlements-actions {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.8rem;
+}
+
+.settlements-actions .btn-primary {
+  margin-top: 0;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.92rem;
+}
+
+.settlements-actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .settlement-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

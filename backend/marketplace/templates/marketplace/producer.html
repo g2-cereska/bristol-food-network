@@ -50,7 +50,10 @@
         Generate a settlement summary for the current period. Each request recalculates
         the figures for the active settlement window — there is no separate history list yet.
       </p>
-      <button type="button" class="btn-primary" id="generate-settlement-btn">Generate settlement</button>
+      <div class="settlements-actions">
+        <button type="button" class="btn-primary" id="generate-settlement-btn">Generate settlement</button>
+        <a class="btn-secondary" id="download-settlement-csv" href="#">Download CSV report</a>
+      </div>
       <p id="settlement-status" class="catalogue-status" role="status" aria-live="polite"></p>
       <div id="settlement-result"></div>
     </section>
@@ -72,6 +75,11 @@
       guestNotice.hidden = false;
       dashboard.hidden = true;
       return;
+    }
+
+    const downloadCsvLink = document.getElementById('download-settlement-csv');
+    if (downloadCsvLink) {
+      downloadCsvLink.href = `/api/settlements/${producerId}/export/`;
     }
 
     const AVAILABILITY_CHOICES = [

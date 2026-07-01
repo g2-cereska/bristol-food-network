@@ -1,5 +1,9 @@
+import csv
+from decimal import Decimal
+
 from django.contrib.auth import login, logout
 from django.db.models import Q
+from django.http import HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
@@ -33,7 +37,7 @@ from .serializers import (
     UpdateSubOrderStatusSerializer,
 )
 from .services.ai_client import fetch_json
-from .services.settlements import build_weekly_settlement
+from .services.settlements import build_weekly_settlement, weekly_settlement_line_items
 
 
 class HealthView(APIView):
@@ -289,6 +293,81 @@ class SettlementSummaryView(APIView):
             )
         settlement = build_weekly_settlement(producer)
         return Response(SettlementSerializer(settlement).data)
+
+
+class SettlementCsvExportView(APIView):
+    """
+    Downloadable CSV settlement report for a producer (TC-012).
+
+    Lists every delivered sub-order behind the current settlement week,
+    with order number, delivery date, customer, items sold, subtotal,
+    commission, and payout — suitable for the producer's own accounting
+    and tax records — followed by a totals row.
+    """
+    permission_classes = [IsAuthenticatedAndProducer]
+
+    def get(self, request, producer_id):
+        producer = get_object_or_404(ProducerProfile, pk=producer_id)
+        if producer != request.user.producer_profile and not request.user.is_staff:
+            return Response(
+                {'detail': 'You can only export your own settlements.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        week_start, week_end, suborders = weekly_settlement_line_items(producer)
+
+        filename = f'settlement_{producer.id}_{week_start.isoformat()}_to_{week_end.isoformat()}.csv'
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        writer = csv.writer(response)
+        writer.writerow([f'Bristol Food Network — Settlement report for {producer.business_name}'])
+        writer.writerow([f'Period: {week_start.isoformat()} to {week_end.isoformat()}'])
+        writer.writerow([])
+        writer.writerow([
+            'Order Number', 'Delivery Date', 'Customer', 'Items',
+            'Subtotal (£)', 'Commission 5% (£)', 'Your Payout 95% (£)', 'Status',
+        ])
+
+        total_subtotal = Decimal('0.00')
+        total_commission = Decimal('0.00')
+        total_payout = Decimal('0.00')
+
+        for suborder in suborders:
+            customer_user = suborder.order.customer.user
+            customer_name = customer_user.get_full_name() or customer_user.username
+            items = '; '.join(
+                f'{item.quantity} x {item.product.name}' for item in suborder.items.all()
+            )
+            commission = suborder.subtotal - suborder.producer_payout
+
+            writer.writerow([
+                suborder.order_id,
+                suborder.delivery_date.isoformat() if suborder.delivery_date else '',
+                customer_name,
+                items,
+                f'{suborder.subtotal:.2f}',
+                f'{commission:.2f}',
+                f'{suborder.producer_payout:.2f}',
+                suborder.status,
+            ])
+
+            total_subtotal += suborder.subtotal
+            total_commission += commission
+            total_payout += suborder.producer_payout
+
+        writer.writerow([])
+        writer.writerow([
+            'TOTAL', '', '', '',
+            f'{total_subtotal:.2f}', f'{total_commission:.2f}', f'{total_payout:.2f}', '',
+        ])
+
+        ActivityLog.objects.create(
+            action='settlement_exported',
+            details=f'{producer.business_name}: {week_start.isoformat()} to {week_end.isoformat()}',
+            user=request.user,
+        )
+        return response
 
 
 class AIRecommendView(APIView):
