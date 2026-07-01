@@ -67,6 +67,14 @@
       return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
+    function allergenLineHtml(product) {
+      const info = (product.allergen_info || '').trim() || 'No common allergens declared.';
+      const isNone = info.toLowerCase().startsWith('no common allergens');
+      const icon = isNone ? '&#10003;' : '&#9888;';
+      const cls = isNone ? 'allergen-line allergen-none' : 'allergen-line allergen-warning';
+      return `<p class="${cls}"><span class="allergen-icon" aria-hidden="true">${icon}</span> ${escapeHtml(info)}</p>`;
+    }
+
     function productCardHtml(product) {
       const hasDiscount = Number(product.discount_percent) > 0;
       const priceRow = hasDiscount
@@ -112,6 +120,7 @@
           </p>
           ${product.description ? `<p class="product-desc">${escapeHtml(product.description)}</p>` : ''}
           ${product.harvest_date ? `<p class="harvest-line">Harvested ${formatDate(product.harvest_date)}</p>` : ''}
+          ${allergenLineHtml(product)}
           <div class="price-row">${priceRow}<span class="unit">/ ${escapeHtml(product.unit)}</span></div>
           <p class="stock-line">${stockLabel(product)}</p>
           ${orderControls}

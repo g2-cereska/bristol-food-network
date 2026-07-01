@@ -508,6 +508,33 @@ code {
   margin: 0;
 }
 
+.allergen-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+}
+
+.allergen-warning {
+  background: #FBEAE8;
+  color: var(--red);
+  font-weight: 600;
+  border: 1px solid var(--red);
+}
+
+.allergen-none {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.allergen-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
 .add-row {
   display: flex;
   gap: 0.5rem;
