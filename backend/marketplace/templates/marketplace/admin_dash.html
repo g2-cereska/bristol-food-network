@@ -1,8 +1,396 @@
-<!DOCTYPE html>
-<html>
-<head><title>Bristol Food Network</title></head>
-<body>
-<h1>admin_dash page placeholder</h1>
-<p>This template will be built out in Sprint 5.</p>
-</body>
-</html>
+{% extends 'marketplace/base.html' %}
+{% load static %}
+
+{% block title %}Admin Dashboard &middot; Bristol Food Network{% endblock %}
+
+{% block content %}
+<section class="admin-page">
+
+  <header class="admin-header">
+    <h1>Admin Dashboard</h1>
+  </header>
+
+  <div id="admin-guest-notice" class="cart-empty" hidden>
+    <p id="admin-guest-message"></p>
+    <a class="btn-primary" id="admin-guest-login-link" href="/market/login/" hidden>Log in</a>
+    <button type="button" class="btn-primary" id="admin-guest-logout-btn" hidden>Log out and switch accounts</button>
+  </div>
+
+  <div id="admin-dashboard">
+
+    <!-- ===================== OVERVIEW STAT CARDS ===================== -->
+    <div class="admin-stat-grid" id="admin-stat-grid"></div>
+
+    <!-- ===================== COMMISSION REPORT ===================== -->
+    <section class="admin-section">
+      <h2>Network commission report</h2>
+      <p class="settlements-intro">
+        5% network commission is calculated on every order at the point of sale. This report
+        reflects commission earned within the selected date range, independent of delivery
+        status &mdash; contrast this with a producer's own settlement, which only pays out
+        once their portion of an order has actually been delivered. &ldquo;Status&rdquo; below
+        reflects the combined progress of an order's producer sub-orders, since an order can
+        involve more than one producer moving at different speeds.
+      </p>
+
+      <form id="commission-filter-form" class="admin-filter-bar" novalidate>
+        <label class="admin-filter-field">
+          Start date
+          <input type="date" id="filter-start-date" name="start_date">
+        </label>
+        <label class="admin-filter-field">
+          End date
+          <input type="date" id="filter-end-date" name="end_date">
+        </label>
+        <label class="admin-filter-field">
+          Status
+          <select id="filter-status" name="status">
+            <option value="">All statuses</option>
+            <option value="pending">Pending (no sub-order started)</option>
+            <option value="in_progress">In progress</option>
+            <option value="delivered">Fully delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </label>
+        <label class="admin-filter-field">
+          Producer
+          <select id="filter-producer" name="producer">
+            <option value="">All producers</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-primary">Apply filters</button>
+        <a class="btn-secondary" id="download-commission-csv" href="#">Download CSV report</a>
+      </form>
+
+      <p id="commission-status" class="catalogue-status" role="status" aria-live="polite"></p>
+
+      <div class="settlement-card" id="commission-summary-card" hidden>
+        <p class="settlement-period" id="commission-period"></p>
+        <dl class="settlement-figures">
+          <dt>Orders in range</dt><dd id="commission-order-count"></dd>
+          <dt>Orders total</dt><dd id="commission-orders-total"></dd>
+          <dt>Network commission</dt><dd id="commission-total" class="settlement-payout"></dd>
+          <dt>Producer payouts</dt><dd id="commission-payout-total"></dd>
+        </dl>
+      </div>
+
+      <div class="admin-table-wrap">
+        <table class="admin-table" id="commission-table" hidden>
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Producers</th>
+              <th class="num">Total</th>
+              <th class="num">Commission</th>
+              <th class="num">Payout</th>
+            </tr>
+          </thead>
+          <tbody id="commission-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== TOP PRODUCTS & RECENT ACTIVITY ===================== -->
+    <div class="admin-columns">
+      <section class="admin-section">
+        <h2>Top products by stock</h2>
+        <ul class="admin-list" id="top-products-list"></ul>
+      </section>
+
+      <section class="admin-section">
+        <h2>Recent activity</h2>
+        <ul class="admin-list" id="recent-activity-list"></ul>
+      </section>
+    </div>
+
+  </div>
+
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const isStaff = document.body.dataset.isStaff === 'true';
+    const isAuthenticated = document.body.dataset.authenticated === 'true';
+    const username = document.body.dataset.username;
+
+    const guestNotice = document.getElementById('admin-guest-notice');
+    const dashboard = document.getElementById('admin-dashboard');
+
+    if (!isStaff) {
+      const messageEl = document.getElementById('admin-guest-message');
+      const loginLink = document.getElementById('admin-guest-login-link');
+      const logoutBtn = document.getElementById('admin-guest-logout-btn');
+
+      if (isAuthenticated) {
+        // Logged in, but as a customer or producer — sending them to the
+        // login page here would just tell them "you're already logged
+        // in" and offer the marketplace, which doesn't explain the real
+        // problem or give them a way out. Explain it and offer to log
+        // them out so they can sign back in with an admin account.
+        messageEl.textContent =
+          `You're signed in as "${username}", which doesn't have admin access on Bristol Food Network. ` +
+          `Log out and sign back in with an administrator account (e.g. admin_1) to view this page.`;
+        logoutBtn.hidden = false;
+        logoutBtn.addEventListener('click', async () => {
+          logoutBtn.disabled = true;
+          logoutBtn.textContent = 'Logging out…';
+          try {
+            const res = await apiFetch('/api/auth/logout/', { method: 'POST', body: JSON.stringify({}) });
+            if (res.ok) {
+              window.location.href = '/market/login/';
+            } else {
+              logoutBtn.disabled = false;
+              logoutBtn.textContent = 'Log out and switch accounts';
+            }
+          } catch (err) {
+            console.error('Logout failed:', err);
+            logoutBtn.disabled = false;
+            logoutBtn.textContent = 'Log out and switch accounts';
+          }
+        });
+      } else {
+        messageEl.textContent = 'You need to be logged in as a network administrator to view this page.';
+        loginLink.hidden = false;
+      }
+
+      guestNotice.hidden = false;
+      dashboard.hidden = true;
+      return;
+    }
+
+    const statGrid = document.getElementById('admin-stat-grid');
+    const filterForm = document.getElementById('commission-filter-form');
+    const startDateInput = document.getElementById('filter-start-date');
+    const endDateInput = document.getElementById('filter-end-date');
+    const statusSelect = document.getElementById('filter-status');
+    const producerSelect = document.getElementById('filter-producer');
+    const downloadCsvLink = document.getElementById('download-commission-csv');
+    const commissionStatus = document.getElementById('commission-status');
+    const summaryCard = document.getElementById('commission-summary-card');
+    const commissionTable = document.getElementById('commission-table');
+    const commissionTableBody = document.getElementById('commission-table-body');
+    const topProductsList = document.getElementById('top-products-list');
+    const recentActivityList = document.getElementById('recent-activity-list');
+
+    let producersPopulated = false;
+    let ordersById = {};
+
+    const STATUS_LABELS = {
+      pending: 'Pending',
+      in_progress: 'In progress',
+      delivered: 'Delivered',
+      cancelled: 'Cancelled',
+    };
+
+    function formatPrice(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? `£${n.toFixed(2)}` : escapeHtml(String(value));
+    }
+
+    function formatDate(isoDate) {
+      if (!isoDate) return '';
+      const date = new Date(isoDate);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function formatDateTime(isoString) {
+      if (!isoString) return '';
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function statCardHtml(label, value) {
+      return `
+        <div class="admin-stat-card">
+          <p class="admin-stat-value">${escapeHtml(String(value))}</p>
+          <p class="admin-stat-label">${escapeHtml(label)}</p>
+        </div>
+      `;
+    }
+
+    function producerCellHtml(producers) {
+      if (!producers.length) return '<span class="ink-soft">&mdash;</span>';
+      return producers.map((p) => (
+        `<span class="badge status-badge status-${p.status}">${escapeHtml(p.producer_name)}</span>`
+      )).join(' ');
+    }
+
+    function commissionRowHtml(order) {
+      const label = STATUS_LABELS[order.status] || order.status;
+      return `
+        <tr class="commission-row" data-order-id="${order.id}" tabindex="0" role="button"
+            aria-expanded="false" title="Click to view the per-producer breakdown">
+          <td>#${order.id} <span class="expand-caret">&rsaquo;</span></td>
+          <td>${formatDate(order.created_at)}</td>
+          <td>${escapeHtml(order.customer_name)}</td>
+          <td><span class="badge status-badge status-${order.status}">${escapeHtml(label)}</span></td>
+          <td>${producerCellHtml(order.producers)}</td>
+          <td class="num">${formatPrice(order.total_amount)}</td>
+          <td class="num">${formatPrice(order.commission_amount)}</td>
+          <td class="num">${formatPrice(order.producer_payout_total)}</td>
+        </tr>
+        <tr class="commission-detail-row" data-detail-for="${order.id}" hidden>
+          <td colspan="8">${producerDetailHtml(order.producers)}</td>
+        </tr>
+      `;
+    }
+
+    function producerDetailHtml(producers) {
+      if (!producers.length) {
+        return '<p class="ink-soft admin-detail-empty">No producer sub-orders on this order.</p>';
+      }
+      const rows = producers.map((p) => `
+        <tr>
+          <td>${escapeHtml(p.producer_name)}</td>
+          <td><span class="badge status-badge status-${p.status}">${escapeHtml(STATUS_LABELS[p.status] || p.status)}</span></td>
+          <td class="num">${formatPrice(p.subtotal)}</td>
+          <td class="num">${formatPrice(p.commission)}</td>
+          <td class="num">${formatPrice(p.payout)}</td>
+        </tr>
+      `).join('');
+      return `
+        <table class="admin-detail-table">
+          <thead>
+            <tr>
+              <th>Producer</th><th>Status</th>
+              <th class="num">Subtotal</th><th class="num">Commission</th><th class="num">Payout</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function buildQueryString() {
+      const params = new URLSearchParams();
+      if (startDateInput.value) params.set('start_date', startDateInput.value);
+      if (endDateInput.value) params.set('end_date', endDateInput.value);
+      if (statusSelect.value) params.set('status', statusSelect.value);
+      if (producerSelect.value) params.set('producer', producerSelect.value);
+      return params.toString();
+    }
+
+    function populateProducers(producers) {
+      if (producersPopulated) return;
+      producers.forEach((p) => {
+        const option = document.createElement('option');
+        option.value = p.id;
+        option.textContent = p.business_name;
+        producerSelect.appendChild(option);
+      });
+      producersPopulated = true;
+    }
+
+    async function loadDashboard(queryString) {
+      commissionStatus.textContent = 'Loading dashboard…';
+      summaryCard.hidden = true;
+      commissionTable.hidden = true;
+
+      try {
+        const res = await fetch(`/api/admin-dashboard/${queryString ? '?' + queryString : ''}`, {
+          credentials: 'same-origin',
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+
+        // Overview stat cards
+        statGrid.innerHTML = [
+          statCardHtml('Producers', data.producer_count),
+          statCardHtml('Customers', data.customer_count),
+          statCardHtml('Products', data.product_count),
+          statCardHtml('Orders', data.order_count),
+          statCardHtml('Pending orders', data.pending_order_count),
+        ].join('');
+
+        // Producer filter (populate once)
+        populateProducers(data.producers || []);
+
+        // Pre-fill date inputs with the resolved range on first load
+        if (!startDateInput.value) startDateInput.value = data.commission_report.start_date;
+        if (!endDateInput.value) endDateInput.value = data.commission_report.end_date;
+
+        // Commission summary
+        const report = data.commission_report;
+        document.getElementById('commission-period').textContent =
+          `${formatDate(report.start_date)} – ${formatDate(report.end_date)}`;
+        document.getElementById('commission-order-count').textContent = report.order_count;
+        document.getElementById('commission-orders-total').textContent = formatPrice(report.orders_total);
+        document.getElementById('commission-total').textContent = formatPrice(report.commission_total);
+        document.getElementById('commission-payout-total').textContent = formatPrice(report.producer_payout_total);
+        summaryCard.hidden = false;
+
+        // Commission table
+        ordersById = {};
+        if (report.orders.length) {
+          report.orders.forEach((o) => { ordersById[o.id] = o; });
+          commissionTableBody.innerHTML = report.orders.map(commissionRowHtml).join('');
+          commissionTable.hidden = false;
+          commissionStatus.textContent = '';
+        } else {
+          commissionTableBody.innerHTML = '';
+          commissionStatus.textContent = 'No orders match this date range and filters.';
+        }
+
+        // Download link reflects the same filters currently applied
+        downloadCsvLink.href = `/api/admin-dashboard/export/${queryString ? '?' + queryString : ''}`;
+
+        // Top products
+        topProductsList.innerHTML = (data.top_products || []).map((p) => `
+          <li>${escapeHtml(p.name)} <span class="ink-soft">&mdash; ${p.stock_quantity} in stock</span></li>
+        `).join('') || '<li class="ink-soft">No products yet.</li>';
+
+        // Recent activity
+        recentActivityList.innerHTML = (data.recent_activity || []).map((a) => `
+          <li>
+            <span class="admin-activity-action">${escapeHtml(a.action)}</span>
+            ${a.details ? `&mdash; ${escapeHtml(a.details)}` : ''}
+            <span class="ink-soft">&middot; ${formatDateTime(a.created_at)}</span>
+          </li>
+        `).join('') || '<li class="ink-soft">No activity recorded yet.</li>';
+
+      } catch (err) {
+        commissionStatus.textContent = 'Could not load the dashboard right now. Please try again.';
+        console.error(err);
+      }
+    }
+
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loadDashboard(buildQueryString());
+    });
+
+    function toggleOrderDetail(orderId) {
+      const detailRow = commissionTableBody.querySelector(`.commission-detail-row[data-detail-for="${orderId}"]`);
+      const mainRow = commissionTableBody.querySelector(`.commission-row[data-order-id="${orderId}"]`);
+      if (!detailRow || !mainRow) return;
+      detailRow.hidden = !detailRow.hidden;
+      mainRow.setAttribute('aria-expanded', detailRow.hidden ? 'false' : 'true');
+      mainRow.classList.toggle('expanded', !detailRow.hidden);
+    }
+
+    commissionTableBody.addEventListener('click', (event) => {
+      const row = event.target.closest('.commission-row');
+      if (row) toggleOrderDetail(row.dataset.orderId);
+    });
+
+    commissionTableBody.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target.closest('.commission-row');
+      if (!row) return;
+      event.preventDefault();
+      toggleOrderDetail(row.dataset.orderId);
+    });
+
+    // Initial load — no query string, so the backend resolves the default
+    // (last 30 days) range and returns it for the date inputs to adopt.
+    loadDashboard('');
+  });
+</script>
+{% endblock %}

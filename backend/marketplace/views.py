@@ -37,6 +37,7 @@ from .serializers import (
     UpdateSubOrderStatusSerializer,
 )
 from .services.ai_client import fetch_json
+from .services.admin_reports import build_commission_report, parse_date_range
 from .services.settlements import build_weekly_settlement, weekly_settlement_line_items
 
 
@@ -409,6 +410,12 @@ class AdminDashboardView(APIView):
         recent = list(
             ActivityLog.objects.order_by('-created_at').values('action', 'details', 'created_at')[:10]
         )
+
+        start_date, end_date = parse_date_range(request.query_params)
+        status_filter = request.query_params.get('status') or None
+        producer_filter = request.query_params.get('producer') or None
+        commission_report = build_commission_report(start_date, end_date, status_filter, producer_filter)
+
         return Response({
             'producer_count': ProducerProfile.objects.count(),
             'customer_count': CustomerProfile.objects.count(),
@@ -419,4 +426,64 @@ class AdminDashboardView(APIView):
                 Product.objects.order_by('-stock_quantity').values('id', 'name', 'stock_quantity')[:5]
             ),
             'recent_activity': recent,
+            'producers': list(
+                ProducerProfile.objects.order_by('business_name').values('id', 'business_name')
+            ),
+            'commission_report': commission_report,
         })
+
+
+class AdminCommissionCsvExportView(APIView):
+    """
+    Downloadable CSV commission report for admins (TC-025) — one row per
+    order with its producer breakdown flattened into a readable summary,
+    followed by a totals row. Respects the same date range / status /
+    producer filters as the on-screen report, via the same query params.
+    """
+    permission_classes = [IsAdminUserOrStaff]
+
+    def get(self, request):
+        start_date, end_date = parse_date_range(request.query_params)
+        status_filter = request.query_params.get('status') or None
+        producer_filter = request.query_params.get('producer') or None
+        report = build_commission_report(start_date, end_date, status_filter, producer_filter)
+
+        filename = f'commission_report_{report["start_date"]}_to_{report["end_date"]}.csv'
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        writer = csv.writer(response)
+        writer.writerow(['Bristol Food Network — Network Commission Report'])
+        writer.writerow([f'Period: {report["start_date"]} to {report["end_date"]}'])
+        if status_filter:
+            writer.writerow([f'Status filter: {status_filter}'])
+        writer.writerow([])
+        writer.writerow([
+            'Order Number', 'Date', 'Customer', 'Status', 'Producers',
+            'Order Total (£)', 'Commission 5% (£)', 'Producer Payout 95% (£)',
+        ])
+
+        for row in report['orders']:
+            producers_summary = '; '.join(
+                f'{p["producer_name"]} [{p["status"]}: subtotal £{p["subtotal"]}, '
+                f'commission £{p["commission"]}, payout £{p["payout"]}]'
+                for p in row['producers']
+            )
+            writer.writerow([
+                row['id'], row['created_at'], row['customer_name'], row['status'],
+                producers_summary, row['total_amount'], row['commission_amount'],
+                row['producer_payout_total'],
+            ])
+
+        writer.writerow([])
+        writer.writerow([
+            'TOTAL', '', '', '', '',
+            report['orders_total'], report['commission_total'], report['producer_payout_total'],
+        ])
+
+        ActivityLog.objects.create(
+            action='commission_report_exported',
+            details=f'{report["start_date"]} to {report["end_date"]}',
+            user=request.user,
+        )
+        return response

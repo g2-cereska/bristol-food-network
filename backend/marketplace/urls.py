@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    AdminCommissionCsvExportView,
     AdminDashboardView,
     AIForecastView,
     AIRecommendView,
@@ -46,4 +47,5 @@ urlpatterns = [
     path('ai/recommend/<int:customer_id>/', AIRecommendView.as_view()),
     path('ai/forecast/<int:producer_id>/', AIForecastView.as_view()),
     path('admin-dashboard/', AdminDashboardView.as_view()),
+    path('admin-dashboard/export/', AdminCommissionCsvExportView.as_view()),
 ]
