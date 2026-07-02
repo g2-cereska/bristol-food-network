@@ -88,6 +88,11 @@
       ['out_of_season', 'Out of Season'],
       ['unavailable', 'Unavailable'],
     ];
+    const MONTH_CHOICES = [
+      [1, 'January'], [2, 'February'], [3, 'March'], [4, 'April'],
+      [5, 'May'], [6, 'June'], [7, 'July'], [8, 'August'],
+      [9, 'September'], [10, 'October'], [11, 'November'], [12, 'December'],
+    ];
     const STATUS_ORDER = ['pending', 'confirmed', 'ready', 'delivered'];
     const STATUS_LABELS = {
       pending: 'Pending', confirmed: 'Confirmed', ready: 'Ready',
@@ -144,6 +149,9 @@
       const availabilityOptions = AVAILABILITY_CHOICES.map(([value, label]) => `
         <option value="${value}" ${p.availability === value ? 'selected' : ''}>${escapeHtml(label)}</option>
       `).join('');
+      const monthOptions = (selected) => MONTH_CHOICES.map(([value, label]) => `
+        <option value="${value}" ${Number(selected) === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+      `).join('');
 
       return `
         <label>Product name
@@ -174,6 +182,25 @@
             <select name="availability">${availabilityOptions}</select>
           </label>
         </div>
+        <div class="field-row">
+          <label>Season starts (optional)
+            <select name="season_start_month">
+              <option value="">&mdash; Year-round &mdash;</option>
+              ${monthOptions(p.season_start_month)}
+            </select>
+          </label>
+          <label>Season ends (optional)
+            <select name="season_end_month">
+              <option value="">&mdash; Year-round &mdash;</option>
+              ${monthOptions(p.season_end_month)}
+            </select>
+          </label>
+        </div>
+        <p class="field-hint">
+          Set both to mark this product as only available for part of the year &mdash; customers
+          will see the date range and won't be able to order it outside that window. Leave both
+          blank for a year-round product.
+        </p>
         <div class="field-row">
           <label>Harvest date
             <input type="date" name="harvest_date" value="${p.harvest_date || ''}">
@@ -272,6 +299,12 @@
         ? '<span class="badge badge-organic">Visible to customers</span>'
         : '<span class="badge badge-category">Hidden from customers</span>';
 
+      const seasonNote = product.season_label
+        ? `<p class="producer-product-meta">Seasonal: ${escapeHtml(product.season_label)}${
+            product.is_in_season_now ? '' : ' (currently out of season)'
+          }</p>`
+        : '';
+
       return `
         <article class="producer-product-card" data-product-id="${product.id}">
           <div class="producer-product-summary">
@@ -282,6 +315,7 @@
                 ${escapeHtml(product.category_name)} &middot; ${formatPrice(product.current_price)} / ${escapeHtml(product.unit)}
                 &middot; ${product.stock_quantity} ${escapeHtml(product.unit)} in stock
               </p>
+              ${seasonNote}
               ${badge}
             </div>
             <button type="button" class="btn-secondary toggle-edit-btn" data-product-id="${product.id}">Edit</button>

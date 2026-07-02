@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.db import models
+from django.utils import timezone
 
 
 class TimeStampedModel(models.Model):
@@ -69,6 +70,14 @@ class Product(TimeStampedModel):
     grade = models.CharField(max_length=4, default='A')
     discount_percent = models.PositiveIntegerField(default=0)
     image = models.ImageField(upload_to='products/', null=True, blank=True)
+    season_start_month = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text='1-12. Leave both season fields blank for a year-round product.',
+    )
+    season_end_month = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text='1-12. Leave both season fields blank for a year-round product.',
+    )
 
     class Meta:
         ordering = ['name']
@@ -80,8 +89,27 @@ class Product(TimeStampedModel):
         return (self.price * Decimal(100 - self.discount_percent) / Decimal(100)).quantize(Decimal('0.01'))
 
     @property
+    def is_in_season_now(self):
+        """
+        True if there's no seasonal restriction set (year-round), or the
+        current month falls within [season_start_month, season_end_month]
+        — inclusive of both ends. Handles a season that wraps across the
+        new year (e.g. start=11/Nov, end=2/Feb covers Nov, Dec, Jan, Feb).
+        """
+        if self.season_start_month is None or self.season_end_month is None:
+            return True
+        current_month = timezone.localdate().month
+        if self.season_start_month <= self.season_end_month:
+            return self.season_start_month <= current_month <= self.season_end_month
+        return current_month >= self.season_start_month or current_month <= self.season_end_month
+
+    @property
     def is_visible(self):
-        return self.availability in {'in_season', 'available'} and self.stock_quantity > 0
+        return (
+            self.availability in {'in_season', 'available'}
+            and self.stock_quantity > 0
+            and self.is_in_season_now
+        )
 
     def __str__(self):
         return self.name

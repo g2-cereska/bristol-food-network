@@ -390,6 +390,28 @@ code {
   color: var(--ink);
 }
 
+.organic-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink);
+  padding: 0.55rem 0.7rem;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: #FBFCF9;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.organic-filter-toggle input[type="checkbox"] {
+  accent-color: var(--green);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
 .btn-secondary {
   background: var(--bg-card);
   color: var(--green-dark);
@@ -483,6 +505,13 @@ code {
   color: var(--ink-soft);
   margin: 0;
   font-style: italic;
+}
+
+.season-line {
+  font-size: 0.78rem;
+  color: var(--green-dark);
+  font-weight: 600;
+  margin: 0;
 }
 
 .price-row {
@@ -847,6 +876,13 @@ code {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.8rem;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin: -0.4rem 0 0.4rem;
+  line-height: 1.5;
 }
 
 .checkbox-label {

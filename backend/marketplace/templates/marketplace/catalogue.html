@@ -21,6 +21,10 @@
     <select id="category-select" aria-label="Filter by category">
       <option value="">All categories</option>
     </select>
+    <label class="organic-filter-toggle">
+      <input type="checkbox" id="organic-only-checkbox">
+      Certified organic only
+    </label>
     <button type="submit" class="btn-secondary">Search</button>
   </form>
 
@@ -40,6 +44,7 @@
     const statusEl = document.getElementById('catalogue-status');
     const searchInput = document.getElementById('search-input');
     const categorySelect = document.getElementById('category-select');
+    const organicOnlyCheckbox = document.getElementById('organic-only-checkbox');
     const filterForm = document.getElementById('filter-form');
 
     // escapeHtml and extractErrorMessage now live in auth.js (shared
@@ -53,6 +58,9 @@
     function stockLabel(product) {
       if (!product.is_visible) {
         if (product.stock_quantity <= 0) return 'Out of stock';
+        if (product.season_label && !product.is_in_season_now) {
+          return `Out of season — available ${product.season_label}`;
+        }
         if (product.availability === 'out_of_season') return 'Out of season';
         return 'Currently unavailable';
       }
@@ -120,6 +128,9 @@
           </p>
           ${product.description ? `<p class="product-desc">${escapeHtml(product.description)}</p>` : ''}
           ${product.harvest_date ? `<p class="harvest-line">Harvested ${formatDate(product.harvest_date)}</p>` : ''}
+          ${product.season_label && product.is_in_season_now
+            ? `<p class="season-line">Available: ${escapeHtml(product.season_label)}</p>`
+            : ''}
           ${allergenLineHtml(product)}
           <div class="price-row">${priceRow}<span class="unit">/ ${escapeHtml(product.unit)}</span></div>
           <p class="stock-line">${stockLabel(product)}</p>
@@ -151,6 +162,7 @@
       const params = new URLSearchParams({ visible_only: 'true' });
       if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
       if (categorySelect.value) params.set('category', categorySelect.value);
+      if (organicOnlyCheckbox.checked) params.set('organic_only', 'true');
 
       try {
         const res = await fetch(`/api/products/?${params.toString()}`, { credentials: 'same-origin' });

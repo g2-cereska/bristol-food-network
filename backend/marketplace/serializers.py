@@ -27,6 +27,10 @@ from .services.food_miles import postcode_distance_miles
 
 COMMISSION_RATE = Decimal('0.05')
 DEFAULT_ALLERGEN_TEXT = 'No common allergens declared.'
+MONTH_NAMES = [
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+]
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -166,6 +170,8 @@ class ProducerDeliveryDateSerializer(serializers.Serializer):
 class ProductSerializer(serializers.ModelSerializer):
     current_price = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
     is_visible = serializers.BooleanField(read_only=True)
+    is_in_season_now = serializers.BooleanField(read_only=True)
+    season_label = serializers.SerializerMethodField()
     producer_name = serializers.CharField(source='producer.business_name', read_only=True)
     producer_lead_time_hours = serializers.IntegerField(source='producer.lead_time_hours', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -177,10 +183,25 @@ class ProductSerializer(serializers.ModelSerializer):
         'description', 'price', 'current_price', 'unit', 'stock_quantity',
         'availability', 'harvest_date', 'farm_origin', 'organic_certified',
         'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible', 'image',
+        'season_start_month', 'season_end_month', 'season_label', 'is_in_season_now',
         ]
 
     def validate_allergen_info(self, value):
         return value.strip() if value.strip() else DEFAULT_ALLERGEN_TEXT
+
+    def validate(self, attrs):
+        start = attrs.get('season_start_month', getattr(self.instance, 'season_start_month', None))
+        end = attrs.get('season_end_month', getattr(self.instance, 'season_end_month', None))
+        if (start is None) != (end is None):
+            raise serializers.ValidationError(
+                'Set both a season start and end month, or leave both blank for year-round availability.'
+            )
+        return attrs
+
+    def get_season_label(self, obj):
+        if obj.season_start_month and obj.season_end_month:
+            return f'{MONTH_NAMES[obj.season_start_month]} \u2013 {MONTH_NAMES[obj.season_end_month]}'
+        return None
 
 
 class CartItemSerializer(serializers.ModelSerializer):
