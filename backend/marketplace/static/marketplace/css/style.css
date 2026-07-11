@@ -481,6 +481,8 @@ code {
 .badge-organic { background: var(--green); color: #fff; }
 .badge-season { background: var(--gold-soft); color: var(--green-dark); }
 .badge-grade { background: var(--gold-soft); color: var(--green-dark); }
+.badge-surplus { background: var(--red); color: #fff; }
+.badge-low-stock { background: var(--red); color: #fff; }
 
 .product-card h3 {
   font-size: 1.05rem;
@@ -956,6 +958,37 @@ code {
 .producer-product-info { flex: 1; }
 .producer-product-info h3 { font-size: 1rem; margin: 0 0 0.15rem; }
 .producer-product-meta { font-size: 0.8rem; color: var(--ink-soft); margin: 0 0 0.35rem; }
+.producer-badge-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+
+.surplus-fieldset {
+  border: 1.5px dashed var(--border);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem 0.9rem;
+  margin: 0 0 0.8rem;
+}
+.surplus-fieldset legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  padding: 0 0.3rem;
+}
+
+.low-stock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.8rem;
+  cursor: pointer;
+}
+.low-stock-toggle input { width: auto; accent-color: var(--red); cursor: pointer; }
+
+.surplus-note {
+  font-size: 0.85rem;
+  color: var(--red);
+  font-style: italic;
+  margin: 0 0 0.4rem;
+}
 
 /* Orders tab */
 

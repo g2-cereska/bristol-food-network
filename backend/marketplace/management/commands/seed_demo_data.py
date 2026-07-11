@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from marketplace.models import Cart, Category, CustomerProfile, ProducerProfile, Product
 
@@ -98,22 +99,33 @@ class Command(BaseCommand):
             ('Surplus Courgettes', categories['Vegetables'], '1.50', 15, True),
         ]
         for name, category, price, stock, organic in products:
-            Product.objects.get_or_create(
-                producer=producer,
-                name=name,
-                defaults={
-                    'category': category,
-                    'description': f'Fresh {name.lower()} from {producer.business_name}.',
-                    'price': price,
-                    'unit': 'kg',
-                    'stock_quantity': stock,
-                    'availability': 'available',
-                    'harvest_date': today - timedelta(days=2),
-                    'farm_origin': producer.business_name,
-                    'organic_certified': organic,
-                    'allergen_info': 'No common allergens declared.',
-                },
-            )
+            defaults = {
+                'category': category,
+                'description': f'Fresh {name.lower()} from {producer.business_name}.',
+                'price': price,
+                'unit': 'kg',
+                'stock_quantity': stock,
+                'availability': 'available',
+                'harvest_date': today - timedelta(days=2),
+                'farm_origin': producer.business_name,
+                'organic_certified': organic,
+                'allergen_info': 'No common allergens declared.',
+            }
+            if name == 'Surplus Courgettes':
+                # A real surplus deal (TC-019), not just a suggestive name —
+                # 30% off, expiring 48 hours after the stack starts.
+                defaults.update({
+                    'discount_percent': 30,
+                    'is_surplus': True,
+                    'surplus_expires_at': timezone.now() + timedelta(hours=48),
+                    'surplus_note': 'Perfect condition, must sell quickly to avoid waste.',
+                })
+            if name == 'Heritage Tomatoes':
+                # Threshold set above the seeded stock level so the low-stock
+                # alert (TC-023) is visible immediately on a fresh seed,
+                # without needing to place orders first.
+                defaults['low_stock_threshold'] = 30
+            Product.objects.get_or_create(producer=producer, name=name, defaults=defaults)
 
     def _seed_dairy_products(self, producer, categories):
         products = [

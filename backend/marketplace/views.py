@@ -2,7 +2,8 @@ import csv
 from decimal import Decimal
 
 from django.contrib.auth import login, logout
-from django.db.models import Q
+from django.db.models import F, Q
+from django.utils import timezone
 from django.http import HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
@@ -103,6 +104,8 @@ class ProductListCreateView(APIView):
         producer = request.query_params.get('producer')
         visible_only = request.query_params.get('visible_only')
         organic_only = request.query_params.get('organic_only')
+        surplus_only = request.query_params.get('surplus_only')
+        low_stock_only = request.query_params.get('low_stock_only')
 
         if search:
             queryset = queryset.filter(
@@ -116,6 +119,20 @@ class ProductListCreateView(APIView):
             queryset = queryset.filter(producer_id=producer)
         if organic_only == 'true':
             queryset = queryset.filter(organic_certified=True)
+        if surplus_only == 'true':
+            # Mirrors Product.is_surplus_active: on, and either no expiry
+            # or an expiry that hasn't passed yet — done at the query
+            # level (rather than filtering the Python list, like
+            # visible_only does) since both halves translate directly to
+            # a WHERE clause.
+            queryset = queryset.filter(is_surplus=True).filter(
+                Q(surplus_expires_at__isnull=True) | Q(surplus_expires_at__gt=timezone.now())
+            )
+        if low_stock_only == 'true':
+            queryset = queryset.filter(
+                low_stock_threshold__isnull=False,
+                stock_quantity__lte=F('low_stock_threshold'),
+            )
 
         products = list(queryset)
         if visible_only == 'true':

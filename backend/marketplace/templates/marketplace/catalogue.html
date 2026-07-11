@@ -25,6 +25,10 @@
       <input type="checkbox" id="organic-only-checkbox">
       Certified organic only
     </label>
+    <label class="organic-filter-toggle">
+      <input type="checkbox" id="surplus-only-checkbox">
+      Surplus deals only
+    </label>
     <button type="submit" class="btn-secondary">Search</button>
   </form>
 
@@ -45,6 +49,7 @@
     const searchInput = document.getElementById('search-input');
     const categorySelect = document.getElementById('category-select');
     const organicOnlyCheckbox = document.getElementById('organic-only-checkbox');
+    const surplusOnlyCheckbox = document.getElementById('surplus-only-checkbox');
     const filterForm = document.getElementById('filter-form');
 
     // escapeHtml and extractErrorMessage now live in auth.js (shared
@@ -75,6 +80,15 @@
       return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
+    function formatDateTime(isoDateTime) {
+      if (!isoDateTime) return '';
+      const date = new Date(isoDateTime);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString('en-GB', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
+    }
+
     function allergenLineHtml(product) {
       const info = (product.allergen_info || '').trim() || 'No common allergens declared.';
       const isNone = info.toLowerCase().startsWith('no common allergens');
@@ -95,6 +109,9 @@
         product.availability === 'in_season' ? '<span class="badge badge-season">In season</span>' : '',
         product.organic_certified ? '<span class="badge badge-organic">Organic</span>' : '',
         product.grade ? `<span class="badge badge-grade">Grade ${escapeHtml(product.grade)}</span>` : '',
+        product.is_surplus_active
+          ? `<span class="badge badge-surplus">Surplus deal &middot; ends ${formatDateTime(product.surplus_expires_at)}</span>`
+          : '',
       ].join('');
 
       const canOrder = isCustomer && product.is_visible && product.stock_quantity > 0;
@@ -127,6 +144,9 @@
             ${escapeHtml(product.producer_name)}${product.farm_origin ? ' &middot; ' + escapeHtml(product.farm_origin) : ''}
           </p>
           ${product.description ? `<p class="product-desc">${escapeHtml(product.description)}</p>` : ''}
+          ${product.is_surplus_active && product.surplus_note
+            ? `<p class="surplus-note">${escapeHtml(product.surplus_note)}</p>`
+            : ''}
           ${product.harvest_date ? `<p class="harvest-line">Harvested ${formatDate(product.harvest_date)}</p>` : ''}
           ${product.season_label && product.is_in_season_now
             ? `<p class="season-line">Available: ${escapeHtml(product.season_label)}</p>`
@@ -163,6 +183,7 @@
       if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
       if (categorySelect.value) params.set('category', categorySelect.value);
       if (organicOnlyCheckbox.checked) params.set('organic_only', 'true');
+      if (surplusOnlyCheckbox.checked) params.set('surplus_only', 'true');
 
       try {
         const res = await fetch(`/api/products/?${params.toString()}`, { credentials: 'same-origin' });

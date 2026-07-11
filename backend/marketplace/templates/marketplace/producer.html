@@ -35,6 +35,10 @@
       </details>
 
       <p id="products-status" class="catalogue-status" role="status" aria-live="polite"></p>
+      <label class="checkbox-label low-stock-toggle">
+        <input type="checkbox" id="low-stock-only-checkbox">
+        Show low stock only
+      </label>
       <div id="producer-product-list" class="producer-product-list"></div>
     </section>
 
@@ -111,6 +115,15 @@
       const date = new Date(isoDate);
       if (Number.isNaN(date.getTime())) return '';
       return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function formatDateTime(isoDateTime) {
+      if (!isoDateTime) return '';
+      const date = new Date(isoDateTime);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString('en-GB', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
     }
 
     /* ---------------- Tabs ---------------- */
@@ -222,6 +235,28 @@
           <label>Discount %
             <input type="number" name="discount_percent" min="0" max="90" value="${p.discount_percent ?? 0}">
           </label>
+          <fieldset class="surplus-fieldset">
+          <legend>Surplus deal</legend>
+          <label class="checkbox-label">
+            <input type="checkbox" name="is_surplus" ${p.is_surplus ? 'checked' : ''}>
+            Mark as a surplus deal (needs a 10&ndash;50% discount above, and an expiry time below)
+          </label>
+          <div class="field-row">
+            <label>Deal expires
+              <input type="datetime-local" name="surplus_expires_at" value="${p.surplus_expires_at ? p.surplus_expires_at.slice(0, 16) : ''}">
+            </label>
+            <label>Note (optional)
+              <input type="text" name="surplus_note" placeholder="e.g. Must sell quickly" value="${escapeHtml(p.surplus_note || '')}">
+            </label>
+          </div>
+        </fieldset>
+        <label>Low stock alert threshold (optional)
+          <input type="number" name="low_stock_threshold" min="0" placeholder="e.g. 10" value="${p.low_stock_threshold ?? ''}">
+        </label>
+        <p class="field-hint">
+          Leave blank to disable. When stock falls to or below this level, the product is
+          flagged as low stock on this dashboard so you know to restock.
+        </p>
         </div>
         <label class="checkbox-label">
           <input type="checkbox" name="organic_certified" ${p.organic_certified ? 'checked' : ''}>
@@ -293,6 +328,7 @@
 
     const productListEl = document.getElementById('producer-product-list');
     const productsStatus = document.getElementById('products-status');
+    const lowStockOnlyCheckbox = document.getElementById('low-stock-only-checkbox');
 
     function productCardHtml(product) {
       const badge = product.is_visible
@@ -303,6 +339,16 @@
         ? `<p class="producer-product-meta">Seasonal: ${escapeHtml(product.season_label)}${
             product.is_in_season_now ? '' : ' (currently out of season)'
           }</p>`
+        : '';
+
+      const surplusBadge = product.is_surplus_active
+        ? `<span class="badge badge-surplus">Surplus deal &middot; ends ${formatDateTime(product.surplus_expires_at)}</span>`
+        : product.is_surplus
+          ? '<span class="badge badge-category">Surplus deal expired</span>'
+          : '';
+
+      const lowStockBadge = product.is_low_stock
+        ? `<span class="badge badge-low-stock">Low stock &mdash; ${product.stock_quantity} ${escapeHtml(product.unit)} left</span>`
         : '';
 
       return `
@@ -316,7 +362,7 @@
                 &middot; ${product.stock_quantity} ${escapeHtml(product.unit)} in stock
               </p>
               ${seasonNote}
-              ${badge}
+              <div class="producer-badge-row">${badge}${surplusBadge}${lowStockBadge}</div>
             </div>
             <button type="button" class="btn-secondary toggle-edit-btn" data-product-id="${product.id}">Edit</button>
           </div>
@@ -335,11 +381,15 @@
     async function loadProducts() {
       productsStatus.textContent = 'Loading your products…';
       try {
-        const res = await fetch(`/api/products/?producer=${producerId}`, { credentials: 'same-origin' });
+        const params = new URLSearchParams({ producer: producerId });
+        if (lowStockOnlyCheckbox.checked) params.set('low_stock_only', 'true');
+        const res = await fetch(`/api/products/?${params.toString()}`, { credentials: 'same-origin' });
         if (!res.ok) throw new Error('Request failed');
         const products = await res.json();
         if (!products.length) {
-          productsStatus.textContent = "You haven't listed any products yet.";
+          productsStatus.textContent = lowStockOnlyCheckbox.checked
+            ? 'Nothing is currently low on stock.'
+            : "You haven't listed any products yet.";
           productListEl.innerHTML = '';
           return;
         }
@@ -350,6 +400,8 @@
         console.error(err);
       }
     }
+
+    lowStockOnlyCheckbox.addEventListener('change', loadProducts);
 
     productListEl.addEventListener('click', (event) => {
       const toggleBtn = event.target.closest('.toggle-edit-btn');

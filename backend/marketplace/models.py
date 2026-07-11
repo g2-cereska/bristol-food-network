@@ -79,6 +79,17 @@ class Product(TimeStampedModel):
         help_text='1-12. Leave both season fields blank for a year-round product.',
     )
 
+    is_surplus = models.BooleanField(default=False)
+    surplus_expires_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When this surplus deal stops being offered. Required if is_surplus is set.',
+    )
+    surplus_note = models.CharField(max_length=255, blank=True)
+    low_stock_threshold = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Alert this producer when stock falls to or below this level. Leave blank to disable.',
+    )
+
     class Meta:
         ordering = ['name']
 
@@ -110,6 +121,26 @@ class Product(TimeStampedModel):
             and self.stock_quantity > 0
             and self.is_in_season_now
         )
+    
+    @property
+    def is_surplus_active(self):
+        """
+        True only while a surplus deal is both switched on and unexpired.
+        Kept as a computed property, not a stored flag, so a deal expires
+        automatically the moment `surplus_expires_at` passes — there's no
+        background job clearing it, and none is needed.
+        """
+        if not self.is_surplus:
+            return False
+        if self.surplus_expires_at and timezone.now() >= self.surplus_expires_at:
+            return False
+        return True
+
+    @property
+    def is_low_stock(self):
+        if self.low_stock_threshold is None:
+            return False
+        return self.stock_quantity <= self.low_stock_threshold
 
     def __str__(self):
         return self.name

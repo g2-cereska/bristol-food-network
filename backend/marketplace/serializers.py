@@ -175,6 +175,8 @@ class ProductSerializer(serializers.ModelSerializer):
     producer_name = serializers.CharField(source='producer.business_name', read_only=True)
     producer_lead_time_hours = serializers.IntegerField(source='producer.lead_time_hours', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
+    is_surplus_active = serializers.BooleanField(read_only=True)
+    is_low_stock = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Product
@@ -184,19 +186,40 @@ class ProductSerializer(serializers.ModelSerializer):
             'availability', 'harvest_date', 'farm_origin', 'organic_certified',
             'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible', 'image',
             'season_start_month', 'season_end_month', 'season_label', 'is_in_season_now',
+            'is_surplus', 'surplus_expires_at', 'surplus_note', 'is_surplus_active',
+            'low_stock_threshold', 'is_low_stock',
         ]
 
     def validate_allergen_info(self, value):
         return value.strip() if value.strip() else DEFAULT_ALLERGEN_TEXT
 
     def validate(self, attrs):
-        start = attrs.get('season_start_month', getattr(self.instance, 'season_start_month', None))
-        end = attrs.get('season_end_month', getattr(self.instance, 'season_end_month', None))
-        if (start is None) != (end is None):
-            raise serializers.ValidationError(
-                'Set both a season start and end month, or leave both blank for year-round availability.'
-            )
-        return attrs
+       start = attrs.get('season_start_month', getattr(self.instance, 'season_start_month', None))
+       end = attrs.get('season_end_month', getattr(self.instance, 'season_end_month', None))
+       if (start is None) != (end is None):
+           raise serializers.ValidationError(
+               'Set both a season start and end month, or leave both blank for year-round availability.'
+           )
+
+       is_surplus = attrs.get('is_surplus', getattr(self.instance, 'is_surplus', False))
+       if is_surplus:
+           discount_percent = attrs.get('discount_percent', getattr(self.instance, 'discount_percent', 0))
+           if not (10 <= discount_percent <= 50):
+               raise serializers.ValidationError(
+                   'Surplus deals need a discount_percent between 10 and 50.'
+               )
+           surplus_expires_at = attrs.get(
+               'surplus_expires_at', getattr(self.instance, 'surplus_expires_at', None)
+           )
+           if surplus_expires_at is None:
+               raise serializers.ValidationError(
+                   'Surplus deals need a surplus_expires_at date/time.'
+               )
+           if surplus_expires_at <= timezone.now():
+               raise serializers.ValidationError(
+                   'surplus_expires_at must be in the future.'
+               )
+       return attrs
 
     def get_season_label(self, obj):
         if obj.season_start_month and obj.season_end_month:
