@@ -36,6 +36,13 @@ whole picture across a commission report.
 - **Food miles** — an approximate straight-line distance between
   producer and customer postcodes, calculated with the Haversine
   formula.
+- **Surplus deals** — producers can flag near-expiry stock as a
+  time-limited discount (10–50% off, with an expiry time); customers can
+  filter the catalogue to surplus deals only, and a deal disappears from
+  that filter automatically once it expires.
+- **Low-stock alerts** — producers set a restock threshold per product;
+  a dashboard filter surfaces everything currently at or below it, live,
+  with no separate notification job involved.
 - **AI microservice** — a separate FastAPI service that Django calls
   over HTTP for personalised recommendations, per-producer demand
   forecasts, and rule-based quality grading (see note below on what this
@@ -190,7 +197,7 @@ enforced server-side, not just hidden in the UI.
 | POST | `producers/register/` | Anyone |
 | POST | `customers/register/` | Anyone |
 | GET | `categories/` | Anyone |
-| GET | `products/` | Anyone — supports `?search=`, `?category=`, `?producer=`, `?organic_only=true`, `?visible_only=true` |
+| GET | `products/` | Anyone — supports `?search=`, `?category=`, `?producer=`, `?organic_only=true`, `?visible_only=true`, `?surplus_only=true`, `?low_stock_only=true` |
 | POST | `products/` | Producers only |
 | GET / PATCH | `products/<id>/` | GET: anyone · PATCH: owning producer only |
 | GET | `cart/<customer_id>/` | Owning customer |
@@ -275,6 +282,16 @@ bristol-food-network/
   fallback and a default distance for anything outside it — enough to
   demonstrate the Haversine calculation working end-to-end without
   shipping a full postcode database.
+- **Surplus deals and low-stock alerts are computed properties, not
+  scheduled jobs.** There's no task queue in this project (no Celery,
+  no cron), so rather than a background process flipping a status flag
+  when a deal expires or stock drops, `Product.is_surplus_active` and
+  `Product.is_low_stock` are evaluated fresh on every read. A surplus
+  deal past its `surplus_expires_at` simply stops matching
+  `?surplus_only=true` the moment it's queried — nothing has to run to
+  "notice" the expiry. Same idea for low stock: it's a live comparison
+  against `low_stock_threshold`, not an alert that was raised once and
+  might now be stale.
 
 ---
 
@@ -294,10 +311,11 @@ bristol-food-network/
   module — see the AI microservice note above.
 - **Deliberately out of scope for this resit**, per the brief's
   allowance to scope out Medium/Low-priority items under time
-  constraints: community bulk ordering, recurring/subscription orders, a
-  dedicated surplus-deals section (the underlying discount field exists
-  generically), farm stories/recipes, low-stock alerts, and product
-  reviews/ratings. None have model support in this codebase.
+  constraints: community bulk ordering (TC-017), recurring/subscription
+  orders (TC-018), farm stories/recipes (TC-020), and product
+  reviews/ratings (TC-024). None have model support in this codebase.
+  (Surplus deals and low-stock alerts were originally scoped out here
+  too, but have since been implemented — see "What it does" above.)
 
 ---
 
@@ -320,8 +338,8 @@ or, without Docker running, from inside `backend/`:
 pytest
 ```
 
-Coverage by test case (19 of the 25 have automated backend tests, 84
-individual test functions across 12 files):
+Coverage by test case (21 of the 25 have automated backend tests, 96
+individual test functions across 14 files):
 
 | Test case | File |
 |---|---|
@@ -334,8 +352,10 @@ individual test functions across 12 files):
 | TC-013 (partial — order-level only) | `test_food_miles.py` |
 | TC-015 (backend only — see note in file) | `test_allergens.py` |
 | TC-016 | `test_seasonal_availability.py` |
+| TC-019 | `test_surplus_deals.py` |
 | TC-021 | `test_order_history.py` |
 | TC-022 | `test_security.py` |
+| TC-023 | `test_low_stock_alerts.py` |
 | TC-025 | `test_admin_dashboard.py` |
 
 The remaining test cases are either inherently visual/UI checks

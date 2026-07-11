@@ -33,8 +33,10 @@ with what the tests actually assert.
 | TC-014 | Filter by organic certification | `test_products.py` | 2 |
 | TC-015 (backend only) | Allergen info stored and returned correctly | `test_allergens.py` | 3 |
 | TC-016 | Seasonal availability, including year-boundary wraparound | `test_seasonal_availability.py` | 8 |
+| TC-019 | Producers mark surplus stock as a discounted, time-limited deal | `test_surplus_deals.py` | 6 |
 | TC-021 | Customer sees own order history, and only their own | `test_order_history.py` | 3 |
 | TC-022 | Password policy, login/session handling, role-based access control | `test_security.py` | 12 |
+| TC-023 | Producers get notified when a product's stock runs low | `test_low_stock_alerts.py` | 6 |
 | TC-025 | Admin commission report — accurate, filterable, exportable | `test_admin_dashboard.py` | 7 |
 
 ---
@@ -263,6 +265,48 @@ sees none of it.
   combined with AND, not accidentally OR — a product that's in season
   but has zero stock must still be hidden.
 
+## TC-019 — Surplus deals (`test_surplus_deals.py`, 6 tests)
+
+- **`test_discount_outside_ten_to_fifty_percent_rejected`** and
+  **`test_surplus_expiry_in_the_past_rejected`** are the two tests
+  actually doing the interesting work here — proving the acceptance
+  criteria's numeric constraints are enforced server-side, not just
+  suggested by the `min`/`max` attributes on the form's number input
+  (which a request that skips the form entirely wouldn't be bound by).
+- **`test_surplus_only_filter_excludes_expired_deals`** is the one worth
+  being able to explain precisely: it creates a product with
+  `is_surplus=True` and an expiry in the *past*, directly via the ORM
+  rather than the API, specifically to prove expiry is enforced by
+  `?surplus_only=true`'s query even for a row that still has
+  `is_surplus=True` sitting in the database. Nothing ever flips that
+  flag back to `False` — see the architecture note in the README on why
+  that's a deliberate choice, not an oversight.
+- **`test_producer_cannot_mark_another_producers_product_surplus`** is
+  the same ownership pattern as the rest of the suite (`403`, via
+  `ProductDetailView.update`'s existing check) — included mainly to
+  confirm the new fields didn't accidentally bypass it.
+
+## TC-023 — Low stock alerts (`test_low_stock_alerts.py`, 6 tests)
+
+- **`test_checkout_pushing_stock_below_threshold_triggers_the_flag`** is
+  the one that actually matters. The other tests in this file set
+  `stock_quantity` directly; this one places a real order through
+  `/api/orders/create/` and lets the normal checkout flow decrement
+  stock, then checks the alert reflects it — proving the alert is
+  reading live data rather than something that only gets recalculated
+  when a producer happens to edit the product.
+- **`test_low_stock_only_filter_scoped_to_one_producer`** creates a
+  second producer with their own low-stock product specifically to
+  prove `?low_stock_only=true&producer=<id>` doesn't leak across
+  producers — same shape as every other ownership-adjacent filter test
+  in this suite, just for a field that's new.
+- **`test_no_threshold_set_never_flags_as_low_stock`** — a product with
+  `stock_quantity=0` but no threshold set must *not* be flagged. This is
+  the test that would fail if `is_low_stock` were ever accidentally
+  implemented as "stock is low" instead of "stock is at or below a
+  threshold the producer actually chose" — the two are easy to conflate
+  and mean very different things.
+
 ---
 
 ## Not covered by this suite, and why
@@ -271,13 +315,12 @@ sees none of it.
   visual checks (badge colours, catalogue layout, the "Available: June –
   August" text placement) that don't have a meaningful API-level
   assertion. Verified manually in-browser instead.
-- **TC-017–020, TC-023, TC-024** — no model support exists for these;
-  explicitly scoped out per the brief's Medium/Low-priority allowance.
-  Nothing to test because nothing was built, by design. That's six IDs,
-  and the README's "Known limitations" section lists exactly six
-  scoped-out features (community bulk ordering, recurring/subscription
-  orders, a dedicated surplus-deals section, farm stories/recipes,
-  low-stock alerts, product reviews/ratings) — almost certainly the same
-  six, though nothing in this repo actually maps *which* ID is *which*
-  feature, so don't quote a specific pairing (e.g. "TC-017 is bulk
-  ordering") without checking the original brief first.
+- **TC-017, TC-018, TC-020, TC-024** — no model support exists for
+  these; explicitly scoped out per the brief's Medium/Low-priority
+  allowance. Nothing to test because nothing was built, by design.
+  (TC-019 and TC-023 were originally in this scoped-out list too, but
+  have since been implemented — see the sections above.) Per the actual
+  brief (`Test_Cases.pdf`), these four map to: TC-017 community bulk
+  ordering, TC-018 recurring/subscription orders, TC-020 farm
+  stories/recipes, TC-024 product reviews/ratings — confirmed against
+  the brief itself, not inferred from matching list lengths.

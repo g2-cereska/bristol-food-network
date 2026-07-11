@@ -171,7 +171,7 @@ are allowed to see everyone's data).
 | POST | `/producers/register/` | Anyone | Has a proper HTML form |
 | POST | `/customers/register/` | Anyone | Has a proper HTML form |
 | GET | `/categories/` | Anyone | |
-| GET | `/products/` | Anyone | Filters: `?category=`, `?search=`, `?visible_only=true`, `?organic_only=true`, `?producer=` — combine freely, e.g. `?category=vegetables&organic_only=true` |
+| GET | `/products/` | Anyone | Filters: `?category=`, `?search=`, `?visible_only=true`, `?organic_only=true`, `?producer=`, `?surplus_only=true`, `?low_stock_only=true` — combine freely, e.g. `?category=vegetables&organic_only=true` |
 | POST | `/products/` | Producer | Creates a product owned by the logged-in producer |
 | GET | `/products/<id>/` | Anyone | |
 | PATCH | `/products/<id>/` | Producer (own) | |
@@ -250,6 +250,15 @@ them immediately rather than assuming something's broken:
   with `"This product is not currently available."` even if you have its
   ID from an earlier successful response — `is_visible` is checked fresh
   on every add, not cached.
+- **Marking a product surplus** (`PATCH /products/<id>/` with
+  `is_surplus: true`) needs `discount_percent` between 10 and 50 *and* a
+  future `surplus_expires_at` — leaving either one out, or setting a
+  discount outside that range, returns a `400` naming which condition
+  failed, e.g. `"Surplus deals need a discount_percent between 10 and 50."`
+  This validation lives on `ProductSerializer`, not
+  `AddCartItemSerializer` — worth knowing if you're hunting for it in the
+  code, since the two serializers sit right next to each other and it's
+  an easy one to paste into the wrong class.
 
 ---
 
@@ -323,6 +332,30 @@ if someone in the room asked "show me it's actually enforced."
    Section 3.
 5. Try both again while logged in as `admin_1` — this time everything
    succeeds, since staff accounts are allowed to see everyone's data.
+
+### E. Surplus deals and low-stock alerts (TC-019, TC-023)
+
+1. Log in as `producer_jane`, find one of her products' IDs (e.g.
+   Organic Carrots), and `PATCH /api/products/<id>/`:
+   ```json
+   {"is_surplus": true, "discount_percent": 30, "surplus_expires_at": "2026-08-01T12:00"}
+   ```
+   Expect `200`, with `is_surplus_active: true` and `current_price`
+   recalculated (30% off) in the response.
+2. `GET /api/products/?surplus_only=true` — that product should be the
+   only one back (assuming no other surplus deals are active).
+3. Revert it: `PATCH` again with `{"is_surplus": false}`. Worth knowing
+   this does **not** reset `discount_percent` — that's a separate field,
+   so the product keeps its discounted price even once it's no longer
+   flagged as surplus, until you clear `discount_percent` too. Not a
+   bug: the two fields are deliberately independent.
+4. For low stock: `PATCH /api/products/<id>/` with
+   `{"low_stock_threshold": 30}` on a product with less stock than that
+   (Heritage Tomatoes seeds at 25, so this works immediately without
+   placing an order first). Then `GET /api/products/<id>/` — expect
+   `is_low_stock: true`.
+5. `GET /api/products/?low_stock_only=true&producer=<producer_jane's id>` —
+   confirms the filter, scoped to just that producer.
 
 ---
 
