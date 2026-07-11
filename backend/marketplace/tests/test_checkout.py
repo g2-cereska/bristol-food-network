@@ -91,7 +91,9 @@ class TestMultiProducerCheckout:
         assert Decimal(data['total_amount']) == Decimal('9.20')
         assert Decimal(data['commission_amount']) == Decimal('0.46')
 
-    def test_checkout_missing_delivery_date_for_one_producer_rejected(self, api_client, customer_user, product, dairy_product):
+    def test_checkout_missing_delivery_date_for_one_producer_rejected(
+        self, api_client, customer_user, product, dairy_product
+    ):
         api_client.force_authenticate(user=customer_user.user)
         api_client.post('/api/cart/add/', {'product_id': product.id, 'quantity': 1}, format='json')
         api_client.post('/api/cart/add/', {'product_id': dairy_product.id, 'quantity': 1}, format='json')

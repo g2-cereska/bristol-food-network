@@ -1,5 +1,3 @@
-from datetime import date
-
 import pytest
 
 from django.utils import timezone

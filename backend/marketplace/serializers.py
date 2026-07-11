@@ -179,11 +179,11 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-        'id', 'producer', 'producer_name', 'producer_lead_time_hours', 'category', 'category_name', 'name',
-        'description', 'price', 'current_price', 'unit', 'stock_quantity',
-        'availability', 'harvest_date', 'farm_origin', 'organic_certified',
-        'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible', 'image',
-        'season_start_month', 'season_end_month', 'season_label', 'is_in_season_now',
+            'id', 'producer', 'producer_name', 'producer_lead_time_hours', 'category', 'category_name', 'name',
+            'description', 'price', 'current_price', 'unit', 'stock_quantity',
+            'availability', 'harvest_date', 'farm_origin', 'organic_certified',
+            'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible', 'image',
+            'season_start_month', 'season_end_month', 'season_label', 'is_in_season_now',
         ]
 
     def validate_allergen_info(self, value):
@@ -262,6 +262,7 @@ class AddCartItemSerializer(serializers.Serializer):
             item.quantity += self.validated_data['quantity']
             item.save()
         return item
+
 
 class UpdateCartItemSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1)
