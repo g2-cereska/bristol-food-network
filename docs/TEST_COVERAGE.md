@@ -9,6 +9,34 @@ and personal reference.
 Run the real thing with `pytest -v` from `backend/`. This document exists
 so you can explain any of it without re-reading the code under pressure.
 
+## Quick reference
+
+One line per test case, taken from the docstring on the test class
+itself rather than paraphrased, so this table can't drift out of sync
+with what the tests actually assert.
+
+| TC | What it proves | File | Tests |
+|---|---|---|---|
+| TC-001 | Producer registration | `test_registration.py` | 5 |
+| TC-002 | Customer registration | `test_registration.py` | 3 |
+| TC-003 | Producers list products; linked to the authenticated producer only | `test_products.py` | 3 |
+| TC-004 | Browse by category; unavailable/out-of-stock items hidden | `test_products.py` | 4 |
+| TC-005 | Search by name/description/producer, case-insensitive | `test_products.py` | 4 |
+| TC-006 | Add to cart, modify quantities, view cart contents, stock-aware | `test_cart.py` | 8 |
+| TC-007 | Checkout, single producer, correct 5%/95% commission split | `test_checkout.py` | 5 |
+| TC-008 | Checkout spanning multiple producers, independent sub-orders | `test_checkout.py` | 3 |
+| TC-009 | Producers see their incoming orders, own only | `test_producer_orders.py` | 2 |
+| TC-010 | Producers update sub-order status one step at a time | `test_producer_orders.py` | 4 |
+| TC-011 | Producers update stock/availability, own products only | `test_products.py` | 3 |
+| TC-012 | Weekly settlement counts only delivered sub-orders, correct 95/5 split | `test_settlements.py` | 3 |
+| TC-013 (partial) | Food miles calculated correctly at order level | `test_food_miles.py` | 2 |
+| TC-014 | Filter by organic certification | `test_products.py` | 2 |
+| TC-015 (backend only) | Allergen info stored and returned correctly | `test_allergens.py` | 3 |
+| TC-016 | Seasonal availability, including year-boundary wraparound | `test_seasonal_availability.py` | 8 |
+| TC-021 | Customer sees own order history, and only their own | `test_order_history.py` | 3 |
+| TC-022 | Password policy, login/session handling, role-based access control | `test_security.py` | 12 |
+| TC-025 | Admin commission report — accurate, filterable, exportable | `test_admin_dashboard.py` | 7 |
+
 ---
 
 ## TC-001 / TC-002 — Registration (`test_registration.py`, 8 tests)
@@ -25,12 +53,9 @@ the easy part. The ones worth being able to explain:
   wrong assumption while writing it. `.upper().strip()` only trims
   *outer* whitespace; `'bs1 4dj'` becomes `'BS1 4DJ'`, not `'BS14DJ'`. I
   had the test asserting the wrong thing until pytest told me so.
-- **`test_error_does_not_reveal_whether_username_exists`** (in
-  `test_security.py`, but same idea) — compares the JSON body of a
-  failed login for a real username against a fake one and asserts
-  they're byte-for-byte identical. That's what actually satisfies TC-022's
-  "without revealing if user exists" — not just "login fails", but that
-  failure looks the same either way.
+
+(The username-enumeration check technically belongs to login, not
+registration — see TC-022, Part 2, below.)
 
 ## TC-003 / TC-004 / TC-005 / TC-011 / TC-014 — Products (`test_products.py`, 16 tests)
 
@@ -85,6 +110,23 @@ around the same `ProductListCreateView`:
 
 ## TC-009 / TC-010 — Producer orders & status (`test_producer_orders.py`, 6 tests)
 
+- **`test_producer_cannot_see_another_producers_orders`** is worth
+  knowing precisely because it *doesn't* assert what most of the other
+  ownership checks in this suite assert. It expects `200` with an empty
+  list (`resp.json() == []`), not a `403`. That's because
+  `ProducerOrderView` is a `ListAPIView` that filters via
+  `get_queryset()` rather than an `APIView` doing an explicit ownership
+  check — `get_queryset()` just returns `ProducerSubOrder.objects.none()`
+  for a producer that isn't you, so the response looks identical to "you
+  have permission, there's nothing here." Every other producer/admin
+  object view in the codebase (cart, settlements, AI forecast, this same
+  file's status-update test below) returns an explicit `403` with a
+  `detail` message instead. Both behaviours are deliberately tested (this
+  test and its near-duplicate in `test_security.py`,
+  `test_producer_cannot_view_another_producers_order_details`, assert the
+  same thing), so it's a real, if minor, inconsistency in the API rather
+  than a bug — but it's the kind of detail worth having straight before
+  someone asks "what status code does that return" and you guess wrong.
 - **`test_cannot_skip_a_status_step`** sends `pending → ready` directly
   (skipping `confirmed`) and asserts `400`. This is the test that proves
   the `STATUS_ORDER.index(current) + 1` check in
@@ -92,7 +134,10 @@ around the same `ProductListCreateView`:
   rather than just accepting any status in the choices list.
 - **`test_other_producer_cannot_update_suborder_status`** — a second
   producer, unrelated to the order, tries to advance someone else's
-  sub-order and gets `403`.
+  sub-order and gets `403`. Unlike the `ProducerOrderView` case above,
+  `UpdateProducerSubOrderStatusView` is a plain `APIView` that checks
+  ownership explicitly and returns a real `403` — the more common pattern
+  in this codebase.
 
 ## TC-012 — Settlements (`test_settlements.py`, 3 tests)
 
@@ -125,12 +170,38 @@ around the same `ProductListCreateView`:
 
 ## TC-022 — Security (`test_security.py`, 12 tests)
 
-- **`test_logout_ends_session`** deliberately does *not* use
-  `force_authenticate` (which bypasses Django's session machinery
-  entirely and would make this test meaningless). It uses
-  `api_client.login()` / `.logout()` — a real session cookie cycle — then
-  proves a request after logout is rejected. This is the one test in the
-  suite doing genuine session-based auth rather than DRF's test shortcut.
+The file is three classes, each covering a distinct part of TC-022 —
+worth knowing the split exists, since "security" is broad enough that
+being able to name the three sub-areas on request is more convincing
+than one vague answer:
+
+- **Part 1 — password policy** (`TestPasswordSecurity`, 3 tests). Weak
+  (`'123'`) and all-lowercase passwords are both rejected at
+  registration, and — same check as `test_registration.py` — the stored
+  value never equals the plaintext password.
+- **Part 2 — login and session handling** (`TestLoginSecurity`,
+  4 tests). Two worth knowing in detail:
+  - **`test_error_does_not_reveal_whether_username_exists`** compares the
+    JSON body of a failed login for a real username against a fake one
+    and asserts they're byte-for-byte identical. That's what actually
+    satisfies "without revealing if a user exists" — not just "login
+    fails", but that the failure looks the same either way.
+  - **`test_logout_ends_session`** deliberately does *not* use
+    `force_authenticate` (which bypasses Django's session machinery
+    entirely and would make this test meaningless). It uses
+    `api_client.login()` / `.logout()` — a real session cookie cycle —
+    then proves a request after logout is rejected. This is the one test
+    in the suite doing genuine session-based auth rather than DRF's test
+    shortcut.
+- **Part 3 — role-based access control** (`TestAuthorisation`, 5 tests).
+  Customers are blocked from producer-only actions (creating a product)
+  and from the admin dashboard; producers are also blocked from the
+  admin dashboard; anonymous requests are blocked from the cart. One of
+  these five, `test_producer_cannot_view_another_producers_order_details`,
+  is the same assertion as `test_producer_orders.py`'s
+  `test_producer_cannot_see_another_producers_orders` — see the TC-009
+  note above for why that one specifically expects `200`/`[]` rather
+  than the `403` you'd get everywhere else in this file.
 
 ## TC-013 (partial) — Food miles (`test_food_miles.py`, 2 tests)
 
@@ -202,4 +273,11 @@ sees none of it.
   assertion. Verified manually in-browser instead.
 - **TC-017–020, TC-023, TC-024** — no model support exists for these;
   explicitly scoped out per the brief's Medium/Low-priority allowance.
-  Nothing to test because nothing was built, by design.
+  Nothing to test because nothing was built, by design. That's six IDs,
+  and the README's "Known limitations" section lists exactly six
+  scoped-out features (community bulk ordering, recurring/subscription
+  orders, a dedicated surplus-deals section, farm stories/recipes,
+  low-stock alerts, product reviews/ratings) — almost certainly the same
+  six, though nothing in this repo actually maps *which* ID is *which*
+  feature, so don't quote a specific pairing (e.g. "TC-017 is bulk
+  ordering") without checking the original brief first.
