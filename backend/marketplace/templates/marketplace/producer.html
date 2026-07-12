@@ -235,7 +235,8 @@
           <label>Discount %
             <input type="number" name="discount_percent" min="0" max="90" value="${p.discount_percent ?? 0}">
           </label>
-          <fieldset class="surplus-fieldset">
+        </div>
+        <fieldset class="surplus-fieldset">
           <legend>Surplus deal</legend>
           <label class="checkbox-label">
             <input type="checkbox" name="is_surplus" ${p.is_surplus ? 'checked' : ''}>
@@ -257,7 +258,6 @@
           Leave blank to disable. When stock falls to or below this level, the product is
           flagged as low stock on this dashboard so you know to restock.
         </p>
-        </div>
         <label class="checkbox-label">
           <input type="checkbox" name="organic_certified" ${p.organic_certified ? 'checked' : ''}>
           Organic certified
@@ -473,17 +473,33 @@
         ? `<button type="button" class="btn-link cancel-status-btn" data-suborder-id="${suborder.id}">Cancel order</button>`
         : '';
 
+      const orgBadge = suborder.customer_organisation
+        ? `<span class="badge badge-organisation">${escapeHtml(suborder.customer_organisation)}${
+            suborder.customer_segment && suborder.customer_segment !== 'household'
+              ? ' &middot; ' + escapeHtml(suborder.customer_segment.replace('_', ' '))
+              : ''
+          }</span>`
+        : '';
+
+      const instructionsHtml = suborder.special_instructions
+        ? `<p class="order-instructions">
+             <strong>Delivery instructions:</strong> ${escapeHtml(suborder.special_instructions)}
+           </p>`
+        : '';
+
       return `
         <article class="producer-order-card" data-suborder-id="${suborder.id}">
           <div class="order-card-header">
             <div>
               <h3>Order #${suborder.order} &middot; ${escapeHtml(suborder.customer_name)}</h3>
+              ${orgBadge}
               <p class="order-meta">
                 Ordered ${formatDate(suborder.order_created_at)} &middot;
                 Deliver by ${formatDate(suborder.delivery_date)}
                 ${suborder.customer_phone ? ' &middot; ' + escapeHtml(suborder.customer_phone) : ''}
               </p>
               <p class="order-meta">${escapeHtml(suborder.delivery_address)}</p>
+              ${instructionsHtml}
             </div>
             <span class="badge status-badge status-${suborder.status}">${STATUS_LABELS[suborder.status]}</span>
           </div>

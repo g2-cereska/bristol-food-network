@@ -78,7 +78,6 @@ class Product(TimeStampedModel):
         null=True, blank=True,
         help_text='1-12. Leave both season fields blank for a year-round product.',
     )
-
     is_surplus = models.BooleanField(default=False)
     surplus_expires_at = models.DateTimeField(
         null=True, blank=True,
@@ -121,7 +120,7 @@ class Product(TimeStampedModel):
             and self.stock_quantity > 0
             and self.is_in_season_now
         )
-    
+
     @property
     def is_surplus_active(self):
         """
@@ -141,6 +140,15 @@ class Product(TimeStampedModel):
         if self.low_stock_threshold is None:
             return False
         return self.stock_quantity <= self.low_stock_threshold
+
+    @property
+    def average_rating(self):
+        result = self.reviews.aggregate(models.Avg('rating'))['rating__avg']
+        return round(result, 1) if result is not None else None
+
+    @property
+    def review_count(self):
+        return self.reviews.count()
 
     def __str__(self):
         return self.name
@@ -189,6 +197,11 @@ class Order(TimeStampedModel):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     delivery_address = models.TextField()
     delivery_date = models.DateField()
+    special_instructions = models.TextField(
+        blank=True,
+        help_text='Delivery notes covering the whole order, e.g. "deliver to kitchen entrance, '
+                   'ask for the kitchen manager" — useful for bulk/institutional orders.',
+    )
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     food_miles_total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -218,6 +231,27 @@ class OrderItem(TimeStampedModel):
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'))
     item_total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+
+class Review(TimeStampedModel):
+    """
+    TC-024: a customer's rating/review of a product they've actually
+    had delivered. `unique_together` is what enforces "one review per
+    customer per product" at the database level, not just in a
+    serializer check that a race condition could slip past.
+    """
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
+    customer = models.ForeignKey(CustomerProfile, on_delete=models.CASCADE, related_name='reviews')
+    rating = models.PositiveSmallIntegerField()
+    title = models.CharField(max_length=120, blank=True)
+    text = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('product', 'customer')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.rating}\u2605 {self.product.name} by {self.customer.user.username}'
 
 
 class Payment(TimeStampedModel):

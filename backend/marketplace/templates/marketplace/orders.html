@@ -68,18 +68,45 @@
       return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
-    function suborderItemRowHtml(item) {
-      return `<li>${item.quantity} &times; ${escapeHtml(item.product_name)} &mdash; ${formatPrice(item.item_total)}</li>`;
+    function suborderItemRowHtml(item, isDelivered) {
+      const reviewWidget = isDelivered
+        ? `
+          <div class="review-widget" data-product-id="${item.product}">
+            <button type="button" class="btn-link write-review-btn" data-product-id="${item.product}">Write a review</button>
+            <form class="review-form" data-product-id="${item.product}" hidden>
+              <label>Rating
+                <select name="rating" required>
+                  <option value="">Select a rating&hellip;</option>
+                  <option value="5">5 &mdash; Excellent</option>
+                  <option value="4">4 &mdash; Good</option>
+                  <option value="3">3 &mdash; Average</option>
+                  <option value="2">2 &mdash; Poor</option>
+                  <option value="1">1 &mdash; Very poor</option>
+                </select>
+              </label>
+              <input type="text" name="title" placeholder="Review title (optional)" maxlength="120">
+              <textarea name="text" rows="2" placeholder="What did you think? (optional)"></textarea>
+              <div class="review-form-actions">
+                <button type="submit" class="btn-primary">Submit review</button>
+                <button type="button" class="btn-link cancel-review-btn" data-product-id="${item.product}">Cancel</button>
+              </div>
+            </form>
+            <p class="review-feedback" data-feedback-for="${item.product}" hidden></p>
+          </div>
+        `
+        : '';
+      return `<li>${item.quantity} &times; ${escapeHtml(item.product_name)} &mdash; ${formatPrice(item.item_total)}${reviewWidget}</li>`;
     }
 
     function suborderBlockHtml(suborder) {
+      const isDelivered = suborder.status === 'delivered';
       return `
         <div class="order-suborder-block" data-suborder-id="${suborder.id}">
           <div class="order-suborder-header">
             <h4>${escapeHtml(suborder.producer_name)}</h4>
             <span class="badge status-badge status-${suborder.status}">${STATUS_LABELS[suborder.status] || suborder.status}</span>
           </div>
-          <ul class="order-items-list">${suborder.items.map(suborderItemRowHtml).join('')}</ul>
+          <ul class="order-items-list">${suborder.items.map((item) => suborderItemRowHtml(item, isDelivered)).join('')}</ul>
           <p class="order-suborder-meta">
             Subtotal ${formatPrice(suborder.subtotal)}
             ${suborder.delivery_date ? ' &middot; Deliver by ' + formatDate(suborder.delivery_date) : ''}
@@ -110,6 +137,12 @@
               <p class="order-card-total">${formatPrice(order.total_amount)}</p>
             </div>
           </div>
+
+          ${order.special_instructions
+            ? `<p class="order-instructions">
+                 <strong>Your delivery instructions:</strong> ${escapeHtml(order.special_instructions)}
+               </p>`
+            : ''}
 
           ${filterProducer ? `<p class="order-filter-note">Showing items from ${escapeHtml(filterProducer)} only</p>` : ''}
 
@@ -228,6 +261,73 @@
         feedback.classList.add('feedback-error');
       }
       feedback.hidden = false;
+    });
+
+    // Show/hide the review form for a given product, delegated the same
+    // way as the reorder button above — items are re-rendered on every
+    // load, so listeners live on the container, not on individual rows.
+    listEl.addEventListener('click', (event) => {
+      const writeBtn = event.target.closest('.write-review-btn');
+      if (writeBtn) {
+        writeBtn.hidden = true;
+        listEl.querySelector(`.review-form[data-product-id="${writeBtn.dataset.productId}"]`).hidden = false;
+        return;
+      }
+      const cancelBtn = event.target.closest('.cancel-review-btn');
+      if (cancelBtn) {
+        cancelBtn.closest('.review-form').hidden = true;
+        listEl.querySelector(`.write-review-btn[data-product-id="${cancelBtn.dataset.productId}"]`).hidden = false;
+      }
+    });
+
+    listEl.addEventListener('submit', async (event) => {
+      const form = event.target.closest('.review-form');
+      if (!form) return;
+      event.preventDefault();
+
+      const productId = form.dataset.productId;
+      const widget = form.closest('.review-widget');
+      const feedback = widget.querySelector(`.review-feedback[data-feedback-for="${productId}"]`);
+      const submitBtn = form.querySelector('button[type="submit"]');
+      const rating = form.querySelector('select[name="rating"]').value;
+
+      if (!rating) {
+        feedback.textContent = 'Please choose a rating.';
+        feedback.classList.add('feedback-error');
+        feedback.hidden = false;
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting…';
+
+      try {
+        const res = await apiFetch(`/api/products/${productId}/reviews/`, {
+          method: 'POST',
+          body: JSON.stringify({
+            rating: Number(rating),
+            title: form.querySelector('input[name="title"]').value.trim(),
+            text: form.querySelector('textarea[name="text"]').value.trim(),
+          }),
+        });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok) {
+          widget.innerHTML = '<p class="review-feedback review-feedback-done">Thanks for your review!</p>';
+        } else {
+          feedback.textContent = extractErrorMessage(data, 'Could not submit your review.');
+          feedback.classList.add('feedback-error');
+          feedback.hidden = false;
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit review';
+        }
+      } catch (err) {
+        feedback.textContent = 'Network error — please try again.';
+        feedback.classList.add('feedback-error');
+        feedback.hidden = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit review';
+      }
     });
 
     loadOrders();

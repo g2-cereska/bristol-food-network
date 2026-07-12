@@ -3,10 +3,10 @@ from decimal import Decimal
 
 from django.contrib.auth import login, logout
 from django.db.models import F, Q
-from django.utils import timezone
 from django.http import HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -33,6 +33,7 @@ from .serializers import (
     ProducerRegisterSerializer,
     ProducerSubOrderSerializer,
     ProductSerializer,
+    ReviewSerializer,
     SettlementSerializer,
     UpdateCartItemSerializer,
     UpdateSubOrderStatusSerializer,
@@ -173,6 +174,39 @@ class ProductDetailView(generics.RetrieveUpdateAPIView):
         updated = serializer.save()
         ActivityLog.objects.create(action='product_updated', details=updated.name, user=request.user)
         return Response(ProductSerializer(updated).data)
+
+
+class ProductReviewListCreateView(APIView):
+    """
+    TC-024. GET is open to anyone — reviews are public, browsing-time
+    information, same as the rating badge on the catalogue card. POST
+    requires a logged-in customer; the actual "did you buy this and was
+    it delivered" check happens inside ReviewSerializer.validate(), not
+    here, so the one rule lives in one place.
+    """
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticatedAndCustomer()]
+        return [permissions.AllowAny()]
+
+    def get(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        reviews = product.reviews.select_related('customer__user')
+        return Response(ReviewSerializer(reviews, many=True).data)
+
+    def post(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        customer = request.user.customer_profile
+        serializer = ReviewSerializer(
+            data=request.data,
+            context={'product': product, 'customer': customer},
+        )
+        serializer.is_valid(raise_exception=True)
+        review = serializer.save()
+        ActivityLog.objects.create(
+            action='review_created', details=f'{review.rating}\u2605 {product.name}', user=request.user,
+        )
+        return Response(ReviewSerializer(review).data, status=status.HTTP_201_CREATED)
 
 
 class CartView(APIView):

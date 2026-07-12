@@ -31,6 +31,13 @@ class Command(BaseCommand):
             address='45 Park Street, Bristol',
             postcode='BS1 5JG',
         )
+        self._seed_customer(
+            username='customer_school',
+            address="St Mary's School, Whiteladies Road, Bristol",
+            postcode='BS8 2NN',
+            organisation_name="St Mary's School",
+            segment='community_group',
+        )
         self._seed_admin(username='admin_1')
 
         self._seed_products(producer_jane, categories)
@@ -63,7 +70,7 @@ class Command(BaseCommand):
         )
         return producer
 
-    def _seed_customer(self, username, address, postcode):
+    def _seed_customer(self, username, address, postcode, organisation_name='', segment='household'):
         user, created = User.objects.get_or_create(
             username=username,
             defaults={'email': f'{username}@example.com'},
@@ -73,7 +80,12 @@ class Command(BaseCommand):
             user.save()
         customer, _ = CustomerProfile.objects.get_or_create(
             user=user,
-            defaults={'address': address, 'postcode': postcode},
+            defaults={
+                'address': address,
+                'postcode': postcode,
+                'organisation_name': organisation_name,
+                'segment': segment,
+            },
         )
         Cart.objects.get_or_create(customer=customer)
         return customer

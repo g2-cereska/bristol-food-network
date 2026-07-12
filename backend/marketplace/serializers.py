@@ -21,6 +21,7 @@ from .models import (
     ProducerProfile,
     ProducerSubOrder,
     Product,
+    Review,
     Settlement,
 )
 from .services.food_miles import postcode_distance_miles
@@ -171,12 +172,14 @@ class ProductSerializer(serializers.ModelSerializer):
     current_price = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
     is_visible = serializers.BooleanField(read_only=True)
     is_in_season_now = serializers.BooleanField(read_only=True)
+    is_surplus_active = serializers.BooleanField(read_only=True)
+    is_low_stock = serializers.BooleanField(read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    review_count = serializers.IntegerField(read_only=True)
     season_label = serializers.SerializerMethodField()
     producer_name = serializers.CharField(source='producer.business_name', read_only=True)
     producer_lead_time_hours = serializers.IntegerField(source='producer.lead_time_hours', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
-    is_surplus_active = serializers.BooleanField(read_only=True)
-    is_low_stock = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Product
@@ -187,44 +190,86 @@ class ProductSerializer(serializers.ModelSerializer):
             'allergen_info', 'best_before', 'grade', 'discount_percent', 'is_visible', 'image',
             'season_start_month', 'season_end_month', 'season_label', 'is_in_season_now',
             'is_surplus', 'surplus_expires_at', 'surplus_note', 'is_surplus_active',
-            'low_stock_threshold', 'is_low_stock',
+            'low_stock_threshold', 'is_low_stock', 'average_rating', 'review_count',
         ]
 
     def validate_allergen_info(self, value):
         return value.strip() if value.strip() else DEFAULT_ALLERGEN_TEXT
 
     def validate(self, attrs):
-       start = attrs.get('season_start_month', getattr(self.instance, 'season_start_month', None))
-       end = attrs.get('season_end_month', getattr(self.instance, 'season_end_month', None))
-       if (start is None) != (end is None):
-           raise serializers.ValidationError(
-               'Set both a season start and end month, or leave both blank for year-round availability.'
-           )
+        start = attrs.get('season_start_month', getattr(self.instance, 'season_start_month', None))
+        end = attrs.get('season_end_month', getattr(self.instance, 'season_end_month', None))
+        if (start is None) != (end is None):
+            raise serializers.ValidationError(
+                'Set both a season start and end month, or leave both blank for year-round availability.'
+            )
 
-       is_surplus = attrs.get('is_surplus', getattr(self.instance, 'is_surplus', False))
-       if is_surplus:
-           discount_percent = attrs.get('discount_percent', getattr(self.instance, 'discount_percent', 0))
-           if not (10 <= discount_percent <= 50):
-               raise serializers.ValidationError(
-                   'Surplus deals need a discount_percent between 10 and 50.'
-               )
-           surplus_expires_at = attrs.get(
-               'surplus_expires_at', getattr(self.instance, 'surplus_expires_at', None)
-           )
-           if surplus_expires_at is None:
-               raise serializers.ValidationError(
-                   'Surplus deals need a surplus_expires_at date/time.'
-               )
-           if surplus_expires_at <= timezone.now():
-               raise serializers.ValidationError(
-                   'surplus_expires_at must be in the future.'
-               )
-       return attrs
+        is_surplus = attrs.get('is_surplus', getattr(self.instance, 'is_surplus', False))
+        if is_surplus:
+            discount_percent = attrs.get('discount_percent', getattr(self.instance, 'discount_percent', 0))
+            if not (10 <= discount_percent <= 50):
+                raise serializers.ValidationError(
+                    'Surplus deals need a discount_percent between 10 and 50.'
+                )
+            surplus_expires_at = attrs.get(
+                'surplus_expires_at', getattr(self.instance, 'surplus_expires_at', None)
+            )
+            if surplus_expires_at is None:
+                raise serializers.ValidationError(
+                    'Surplus deals need a surplus_expires_at date/time.'
+                )
+            if surplus_expires_at <= timezone.now():
+                raise serializers.ValidationError(
+                    'surplus_expires_at must be in the future.'
+                )
+        return attrs
 
     def get_season_label(self, obj):
         if obj.season_start_month and obj.season_end_month:
             return f'{MONTH_NAMES[obj.season_start_month]} \u2013 {MONTH_NAMES[obj.season_end_month]}'
         return None
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    """
+    TC-024. `product` comes from the URL (set by the view before
+    validation), not from the request body — a review is always for
+    whichever product's endpoint you posted to, the same way cart-add
+    and checkout never trust a customer_id/product_id the request could
+    have forged.
+    """
+    customer_name = serializers.CharField(source='customer.user.username', read_only=True)
+
+    class Meta:
+        model = Review
+        fields = ['id', 'product', 'customer', 'customer_name', 'rating', 'title', 'text', 'created_at']
+        read_only_fields = ['product', 'customer']
+
+    def validate_rating(self, value):
+        if not (1 <= value <= 5):
+            raise serializers.ValidationError('Rating must be between 1 and 5.')
+        return value
+
+    def validate(self, attrs):
+        product = self.context['product']
+        customer = self.context['customer']
+
+        has_delivered_item = OrderItem.objects.filter(
+            product=product,
+            suborder__order__customer=customer,
+            suborder__status='delivered',
+        ).exists()
+        if not has_delivered_item:
+            raise serializers.ValidationError(
+                'You can only review products from an order that has actually been delivered to you.'
+            )
+
+        if Review.objects.filter(product=product, customer=customer).exists():
+            raise serializers.ValidationError('You have already reviewed this product.')
+
+        attrs['product'] = product
+        attrs['customer'] = customer
+        return attrs
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -309,7 +354,10 @@ class ProducerSubOrderSerializer(serializers.ModelSerializer):
     producer_name = serializers.CharField(source='producer.business_name', read_only=True)
     customer_name = serializers.CharField(source='order.customer.user.username', read_only=True)
     customer_phone = serializers.CharField(source='order.customer.phone', read_only=True)
+    customer_organisation = serializers.CharField(source='order.customer.organisation_name', read_only=True)
+    customer_segment = serializers.CharField(source='order.customer.segment', read_only=True)
     delivery_address = serializers.CharField(source='order.delivery_address', read_only=True)
+    special_instructions = serializers.CharField(source='order.special_instructions', read_only=True)
     order_created_at = serializers.DateTimeField(source='order.created_at', read_only=True)
 
     class Meta:
@@ -317,7 +365,8 @@ class ProducerSubOrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'order', 'producer', 'producer_name', 'status', 'subtotal',
             'producer_payout', 'delivery_date', 'delivery_notes', 'items',
-            'customer_name', 'customer_phone', 'delivery_address', 'order_created_at',
+            'customer_name', 'customer_phone', 'customer_organisation', 'customer_segment',
+            'delivery_address', 'special_instructions', 'order_created_at',
         ]
 
 
@@ -328,7 +377,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'customer', 'status', 'delivery_address', 'delivery_date',
-            'total_amount', 'commission_amount', 'food_miles_total',
+            'special_instructions', 'total_amount', 'commission_amount', 'food_miles_total',
             'payment_status', 'suborders', 'created_at',
         ]
 
@@ -350,6 +399,7 @@ class OrderCreateSerializer(serializers.Serializer):
     delivery_address = serializers.CharField(required=False, allow_blank=True)
     delivery_dates = ProducerDeliveryDateSerializer(many=True)
     payment_method = serializers.CharField(required=False, default='sandbox')
+    special_instructions = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
         try:
@@ -408,6 +458,7 @@ class OrderCreateSerializer(serializers.Serializer):
             customer=customer,
             delivery_address=validated_data['delivery_address'],
             delivery_date=max(date_by_producer.values()),
+            special_instructions=validated_data.get('special_instructions', ''),
             payment_status='pending',
         )
 

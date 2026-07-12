@@ -155,6 +155,28 @@ code {
 }
 .btn-link:hover { color: var(--gold-soft); text-decoration: underline; }
 
+/*
+ * .btn-link's pale colour above is correct for #logout-btn, which sits
+ * on the dark green header — but every other .btn-link in the project
+ * sits on a white/light card, where that same pale colour is nearly
+ * invisible. Overriding per-usage rather than changing the base class,
+ * since the header usage genuinely needs the pale colour.
+ */
+.remove-btn,
+.cancel-edit-btn,
+.cancel-status-btn,
+.write-review-btn,
+.cancel-review-btn {
+  color: var(--ink-soft);
+}
+.remove-btn:hover,
+.cancel-edit-btn:hover,
+.cancel-status-btn:hover,
+.write-review-btn:hover,
+.cancel-review-btn:hover {
+  color: var(--green);
+}
+
 /* ---------- Main / messages ---------- */
 
 .site-main {
@@ -483,6 +505,7 @@ code {
 .badge-grade { background: var(--gold-soft); color: var(--green-dark); }
 .badge-surplus { background: var(--red); color: #fff; }
 .badge-low-stock { background: var(--red); color: #fff; }
+.badge-organisation { background: var(--gold-soft); color: var(--green-dark); text-transform: none; letter-spacing: normal; }
 
 .product-card h3 {
   font-size: 1.05rem;
@@ -492,6 +515,13 @@ code {
 .producer-line {
   font-size: 0.82rem;
   color: var(--ink-soft);
+  margin: 0;
+}
+
+.rating-line {
+  font-size: 0.82rem;
+  color: var(--gold);
+  font-weight: 600;
   margin: 0;
 }
 
@@ -1015,6 +1045,61 @@ code {
 
 .order-card-header h3 { font-size: 1rem; margin: 0 0 0.2rem; }
 .order-meta { font-size: 0.8rem; color: var(--ink-soft); margin: 0.1rem 0; }
+.order-instructions {
+  font-size: 0.85rem;
+  background: var(--gold-soft);
+  color: var(--green-dark);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  margin: 0.4rem 0 0;
+}
+
+.review-widget {
+  display: block;
+  margin-top: 0.35rem;
+}
+.write-review-btn {
+  font-size: 0.78rem;
+}
+.review-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 26rem;
+  margin-top: 0.3rem;
+  padding: 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.review-form label {
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.review-form select,
+.review-form input,
+.review-form textarea {
+  font-size: 0.85rem;
+}
+.review-form-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.review-feedback {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 0.3rem 0 0;
+}
+.review-feedback.feedback-error {
+  color: var(--red);
+}
+.review-feedback-done {
+  color: var(--green);
+  font-weight: 600;
+}
 
 .status-badge {
   white-space: nowrap;

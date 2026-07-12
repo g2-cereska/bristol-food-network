@@ -35,6 +35,12 @@
 
       <div id="producer-delivery-dates" class="producer-delivery-dates"></div>
 
+      <label for="special-instructions">Delivery instructions (optional)</label>
+      <textarea
+        id="special-instructions" rows="2"
+        placeholder="e.g. Deliver to the kitchen entrance, ask for the kitchen manager — useful for institutional or bulk orders"
+      ></textarea>
+
       <p id="checkout-error" class="form-error" hidden></p>
 
       <button type="submit" class="btn-primary" id="checkout-submit">Place order</button>
@@ -275,6 +281,8 @@
       const payload = { delivery_dates: deliveryDates };
       const address = document.getElementById('delivery-address').value.trim();
       if (address) payload.delivery_address = address;
+      const instructions = document.getElementById('special-instructions').value.trim();
+      if (instructions) payload.special_instructions = instructions;
 
       try {
         const res = await apiFetch('/api/orders/create/', {
