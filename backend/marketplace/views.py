@@ -16,10 +16,13 @@ from .models import (
     Category,
     CartItem,
     CustomerProfile,
+    ForecastLog,
     Order,
     ProducerProfile,
     ProducerSubOrder,
     Product,
+    RecommendationLog,
+    UserInteraction,
 )
 from .permissions import IsAdminUserOrStaff, IsAuthenticatedAndCustomer, IsAuthenticatedAndProducer
 from .serializers import (
@@ -38,7 +41,7 @@ from .serializers import (
     UpdateCartItemSerializer,
     UpdateSubOrderStatusSerializer,
 )
-from .services.ai_client import fetch_json
+from .services.ai_client import AIServiceUnavailable, fetch_json
 from .services.admin_reports import build_commission_report, parse_date_range
 from .services.settlements import build_weekly_settlement, weekly_settlement_line_items
 
@@ -436,7 +439,37 @@ class AIRecommendView(APIView):
                 {'detail': 'You can only access your own recommendations.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        payload = fetch_json(f'/recommend/{customer_id}')
+        try:
+            payload = fetch_json(f'/recommend/{customer_id}')
+        except AIServiceUnavailable:
+            return Response(
+                {'detail': 'Recommendations are temporarily unavailable. Please try again shortly.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        RecommendationLog.objects.create(
+            customer=customer,
+            model_version=payload.get('model_version', 'unknown'),
+            response_payload=payload,
+        )
+        # The AI service's sample catalogue (see ai_service/main.py) is a
+        # small hardcoded stub with no real access to this database — its
+        # product IDs are internal to that stub and are NOT the same
+        # sequence as this database's real product IDs; they only
+        # coincidentally overlap for some items. Matching by name instead
+        # of trusting product_id avoids silently logging a UserInteraction
+        # against the wrong product (verified this the hard way: the
+        # stub's id 5 is "Farmhouse Cheddar", but this database's real
+        # product 5 happens to be "Whole Milk 1L").
+        for item in payload.get('recommendations', []):
+            product = Product.objects.filter(name=item.get('product_name')).first()
+            if product:
+                UserInteraction.objects.create(
+                    customer=customer,
+                    product=product,
+                    interaction_type='recommended',
+                    metadata={'confidence': item.get('confidence'), 'model_version': payload.get('model_version')},
+                )
         return Response(payload)
 
 
@@ -450,7 +483,19 @@ class AIForecastView(APIView):
                 {'detail': 'You can only access your own forecasts.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        payload = fetch_json(f'/forecast/{producer_id}')
+        try:
+            payload = fetch_json(f'/forecast/{producer_id}')
+        except AIServiceUnavailable:
+            return Response(
+                {'detail': 'Forecasts are temporarily unavailable. Please try again shortly.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        ForecastLog.objects.create(
+            producer=producer,
+            model_version=payload.get('model_version', 'unknown'),
+            response_payload=payload,
+        )
         return Response(payload)
 
 
