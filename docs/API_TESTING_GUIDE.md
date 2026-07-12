@@ -463,6 +463,37 @@ and it'll grade `A`; push `days_since_harvest` past 5 or `defect_score`
 past 0.3 and watch it drop to `C`. Useful for demonstrating the grading
 boundary live rather than just describing it.
 
+### Testing the Django ↔ AI service integration, not just the AI service alone
+
+The endpoints above test the FastAPI service in isolation. To confirm
+Django's side of the integration (auth, logging, and failure handling),
+go through `/api/ai/recommend/<customer_id>/` and
+`/api/ai/forecast/<producer_id>/` instead — via the browsable API,
+logged in as the relevant customer/producer.
+
+- **Every successful call is logged.** Check `/django-admin/` afterward
+  — a new **Recommendation log** or **Forecast log** row should appear,
+  and for a recommend call, one **User interaction** row per product
+  recommended.
+- **The `UserInteraction.product` field is matched by name, not by the
+  AI service's `product_id`.** Worth confirming directly: note a
+  `product_name` from the recommend response, then check the matching
+  `UserInteraction` row actually points at that same product. This
+  matters because the AI service's sample catalogue
+  (`ai_service/main.py`) is a small hardcoded stub with no real
+  database access — its IDs are its own internal numbering, not this
+  database's, and only coincidentally line up for some items.
+- **Stopping the AI service should degrade gracefully, not crash.**
+  ```powershell
+  docker-compose stop ai_service
+  ```
+  Then retry the same `/api/ai/recommend/...` or `/api/ai/forecast/...`
+  call — expect `503` with `{"detail": "... temporarily unavailable.
+  Please try again shortly."}`, not a raw `500` with a Django debug
+  traceback. Bring it back with `docker-compose start ai_service`
+  afterward — the rest of the site doesn't depend on it, but it's easy
+  to forget it's still down.
+
 ---
 
 ## 8. PowerShell gotcha — `curl` is not curl
@@ -496,3 +527,8 @@ fiddly than either of these.
 - [ ] Cross-account access attempt (Section 6D) correctly 403s
 - [ ] Admin dashboard loads and both CSV exports download correctly
 - [ ] `localhost:8001/docs` loads and endpoints respond
+- [ ] `/api/ai/recommend/<id>/` returns `200` and logs appear in
+      `/django-admin/` (Recommendation log, User interactions)
+- [ ] After `docker-compose stop ai_service`, the same call returns
+      `503` with a friendly message, not a raw error — then
+      `docker-compose start ai_service` before moving on

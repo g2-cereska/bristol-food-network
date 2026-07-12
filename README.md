@@ -57,7 +57,11 @@ whole picture across a commission report.
 - **AI microservice** — a separate FastAPI service that Django calls
   over HTTP for personalised recommendations, per-producer demand
   forecasts, and rule-based quality grading (see note below on what this
-  is and isn't).
+  is and isn't). Every recommend/forecast call is logged
+  (`RecommendationLog`/`ForecastLog`, plus a `UserInteraction` per
+  recommended product), and if the AI service is ever unreachable,
+  Django returns a clean `503` with a friendly message instead of an
+  unhandled error.
 
 ---
 
@@ -266,8 +270,8 @@ enforced server-side, not just hidden in the UI.
 | PATCH | `producer-suborders/<suborder_id>/status/` | Owning producer or staff |
 | POST | `settlements/<producer_id>/` | Owning producer or staff |
 | GET | `settlements/<producer_id>/export/` | Owning producer or staff — downloads a CSV |
-| GET | `ai/recommend/<customer_id>/` | Owning customer |
-| GET | `ai/forecast/<producer_id>/` | Owning producer or staff |
+| GET | `ai/recommend/<customer_id>/` | Owning customer | `503` with a friendly message if the AI service is unreachable |
+| GET | `ai/forecast/<producer_id>/` | Owning producer or staff | `503` with a friendly message if the AI service is unreachable |
 | GET | `admin-dashboard/` | Staff/superuser only — supports `?start_date=`, `?end_date=`, `?status=`, `?producer=` |
 | GET | `admin-dashboard/export/` | Staff/superuser only — downloads a CSV, same filters as above |
 
@@ -362,10 +366,20 @@ bristol-food-network/
 - **The AI service is a demonstration stand-in, not a trained model.**
   Recommendations and forecasts are generated from a seeded random
   process (deterministic per customer/producer ID, so demos are
-  repeatable) rather than learned from `UserInteraction` history, and
-  quality grading is a simple rule on two input numbers rather than a
-  computer-vision classifier. This is intentional scope for this
-  module — see the AI microservice note above.
+  repeatable), and quality grading is a simple rule on two input numbers
+  rather than a computer-vision classifier. This is intentional scope
+  for this module — see the AI microservice note above. Every call is
+  now logged to `RecommendationLog`/`ForecastLog`/`UserInteraction` and
+  a downed AI service is handled gracefully (a clean `503`, not a raw
+  `500`) — but nothing in this codebase actually trains on that logged
+  history yet; it's recorded for a future, real model to consume, not
+  read back by this one. Matching `UserInteraction` to a real product is
+  done by name, not by the AI service's own `product_id` — its sample
+  catalogue (`ai_service/main.py`) is a small hardcoded stub with no
+  real access to this database, so its IDs don't reliably correspond to
+  the same product here (found this the hard way: its ID 5 is
+  "Farmhouse Cheddar", this database's real product 5 is "Whole Milk
+  1L").
 - **Deliberately out of scope for this resit**, per the brief's
   allowance to scope out Medium/Low-priority items under time
   constraints: recurring/subscription orders (TC-018) and farm
