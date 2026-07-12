@@ -43,6 +43,17 @@ whole picture across a commission report.
 - **Low-stock alerts** — producers set a restock threshold per product;
   a dashboard filter surfaces everything currently at or below it, live,
   with no separate notification job involved.
+- **Community/bulk orders** — customers can register with an
+  organisation name and a segment (community group, restaurant, etc.),
+  and attach delivery instructions to an order that producers see
+  alongside their sub-order — useful for institutional buyers where "who
+  is this really for" and "where exactly does it go" matter more than
+  for an ordinary household order.
+- **Product reviews** — customers can rate and review a product once
+  it's actually been delivered to them (one review each, verified
+  against their own delivery history, not just against having ordered
+  it); the catalogue shows the resulting average rating and review
+  count per product.
 - **AI microservice** — a separate FastAPI service that Django calls
   over HTTP for personalised recommendations, per-producer demand
   forecasts, and rule-based quality grading (see note below on what this
@@ -117,6 +128,43 @@ want to override a value (e.g. `SECRET_KEY` for a non-local deployment),
 either edit that file or export the equivalent environment variable
 before running `docker-compose up`.
 
+### Making a model change
+
+`docker-compose up` only *applies* migrations that already exist as
+files — it won't generate a new one for you. If you've added, removed,
+or changed a field in `models.py`, you need to create the migration
+yourself first:
+
+```powershell
+docker-compose exec backend bash -c "cd backend && python manage.py makemigrations marketplace"
+```
+
+That creates a new file under `backend/marketplace/migrations/` (Django
+names it automatically, e.g. `0005_order_special_instructions.py`) and
+prints a summary of what it's adding. Then either apply it directly:
+
+```powershell
+docker-compose exec backend bash -c "cd backend && python manage.py migrate"
+```
+
+or just restart the stack, since `docker-compose up` applies any
+pending migration automatically on startup anyway:
+
+```powershell
+docker-compose up
+```
+
+To check a migration's actually been applied (`[X]`) rather than still
+pending (`[ ]`):
+
+```powershell
+docker-compose exec backend bash -c "cd backend && python manage.py showmigrations marketplace"
+```
+
+If `makemigrations` says "No changes detected," the model file you
+edited probably isn't saved, or isn't the one the container actually
+sees — worth double-checking before assuming something's broken.
+
 ---
 
 ## Demo accounts
@@ -127,7 +175,8 @@ All seeded automatically, password **`Password123!`** for every account:
 |---|---|---|
 | `producer_jane` | Producer | Bristol Valley Farm |
 | `producer_dairy` | Producer | Hillside Dairy |
-| `customer_robert` | Customer | |
+| `customer_robert` | Customer | Ordinary household account |
+| `customer_school` | Customer | Community group — "St Mary's School" |
 | `admin_1` | Network admin | `is_staff` + `is_superuser` |
 
 Seeded catalogue: 4 products from Bristol Valley Farm (carrots, tomatoes,
@@ -149,12 +198,19 @@ docker-compose exec backend python manage.py seed_demo_data
 `/market/`, filter by category or organic, add products from more than
 one producer to the cart, and check out. The order confirmation shows
 the automatic per-producer split, food miles, and the 5% commission.
+Log in as `customer_school` instead to see the community-group flow —
+checkout has an optional delivery-instructions field, and the order
+shows up flagged on the producer's side as coming from an organisation,
+not just an individual.
 
 **As a producer** (`producer_jane` or `producer_dairy`) — visit
 `/market/producer/` to see incoming sub-orders and move them through
 `Pending → Confirmed → Ready → Delivered`. Once something's delivered,
 the settlement tab shows the 95/5 payout for the current week, with a
-CSV export.
+CSV export. Once you've done that, log back in as the customer who
+placed it and visit **My Orders** — the delivered item now has a
+"Write a review" link; the resulting rating shows up on that product's
+catalogue card.
 
 **As an admin** (`admin_1`) — visit `/market/admin-dash/` for
 platform-wide stats, a recent-activity feed, and a date-filterable
@@ -200,6 +256,7 @@ enforced server-side, not just hidden in the UI.
 | GET | `products/` | Anyone — supports `?search=`, `?category=`, `?producer=`, `?organic_only=true`, `?visible_only=true`, `?surplus_only=true`, `?low_stock_only=true` |
 | POST | `products/` | Producers only |
 | GET / PATCH | `products/<id>/` | GET: anyone · PATCH: owning producer only |
+| GET / POST | `products/<id>/reviews/` | GET: anyone · POST: customer with a delivered order for this product |
 | GET | `cart/<customer_id>/` | Owning customer |
 | POST | `cart/add/` | Customers only (customer taken from the session, not the request body) |
 | PATCH / DELETE | `cart/items/<item_id>/` | Owning customer |
@@ -311,11 +368,11 @@ bristol-food-network/
   module — see the AI microservice note above.
 - **Deliberately out of scope for this resit**, per the brief's
   allowance to scope out Medium/Low-priority items under time
-  constraints: community bulk ordering (TC-017), recurring/subscription
-  orders (TC-018), farm stories/recipes (TC-020), and product
-  reviews/ratings (TC-024). None have model support in this codebase.
-  (Surplus deals and low-stock alerts were originally scoped out here
-  too, but have since been implemented — see "What it does" above.)
+  constraints: recurring/subscription orders (TC-018) and farm
+  stories/recipes (TC-020). Neither has model support in this codebase.
+  (Surplus deals, low-stock alerts, community/bulk orders, and product
+  reviews were originally scoped out here too, but have since been
+  implemented — see "What it does" above.)
 
 ---
 
@@ -338,8 +395,8 @@ or, without Docker running, from inside `backend/`:
 pytest
 ```
 
-Coverage by test case (21 of the 25 have automated backend tests, 96
-individual test functions across 14 files):
+Coverage by test case (23 of the 25 have automated backend tests, 110
+individual test functions across 16 files):
 
 | Test case | File |
 |---|---|
@@ -352,10 +409,12 @@ individual test functions across 14 files):
 | TC-013 (partial — order-level only) | `test_food_miles.py` |
 | TC-015 (backend only — see note in file) | `test_allergens.py` |
 | TC-016 | `test_seasonal_availability.py` |
+| TC-017 | `test_bulk_orders.py` |
 | TC-019 | `test_surplus_deals.py` |
 | TC-021 | `test_order_history.py` |
 | TC-022 | `test_security.py` |
 | TC-023 | `test_low_stock_alerts.py` |
+| TC-024 | `test_reviews.py` |
 | TC-025 | `test_admin_dashboard.py` |
 
 The remaining test cases are either inherently visual/UI checks

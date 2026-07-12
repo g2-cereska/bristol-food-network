@@ -143,7 +143,8 @@ All demo accounts share the password `Password123!`:
 |---|---|---|
 | `producer_jane` | Producer | Bristol Valley Farm |
 | `producer_dairy` | Producer | Hillside Dairy |
-| `customer_robert` | Customer | |
+| `customer_robert` | Customer | Ordinary household account |
+| `customer_school` | Customer | Community group — `organisation_name: "St Mary's School"`, `segment: "community_group"` |
 | `admin_1` | Staff/Admin | `is_staff=True`, `is_superuser=True` |
 
 Re-run the seed command any time — safe to repeat, uses `get_or_create`:
@@ -175,6 +176,8 @@ are allowed to see everyone's data).
 | POST | `/products/` | Producer | Creates a product owned by the logged-in producer |
 | GET | `/products/<id>/` | Anyone | |
 | PATCH | `/products/<id>/` | Producer (own) | |
+| GET | `/products/<id>/reviews/` | Anyone | Public — no login needed |
+| POST | `/products/<id>/reviews/` | Customer | Needs a delivered order item for this product; one review per customer per product |
 | GET | `/cart/<customer_id>/` | Customer (own) | |
 | POST | `/cart/add/` | Customer | **POST only** — see the worked example above |
 | PATCH | `/cart/items/<item_id>/` | Customer (own) | `{"quantity": N}` |
@@ -210,14 +213,22 @@ Django feature yet.
 {
   "delivery_dates": [
     {"producer_id": 1, "delivery_date": "2026-07-10"}
-  ]
+  ],
+  "special_instructions": "Deliver to the kitchen entrance, ask for the kitchen manager."
 }
 ```
 `customer_id` isn't needed in the body — like cart-add, `OrderCreateView`
 overwrites it with the logged-in customer's own ID before validation
 ever runs, so there's no way to place an order as someone else even if
 you tried to. `delivery_address` is optional too; leave it out and it
-falls back to the customer's profile address.
+falls back to the customer's profile address. `special_instructions` is
+also optional — omit it entirely for an ordinary order; it exists mainly
+for bulk/institutional buyers (TC-017) who need to tell a producer
+something like which entrance to use. Whatever you send there is saved
+on the whole `Order`, not per sub-order, and is readable both by the
+customer (`GET /orders/`) and by every producer fulfilling a piece of it
+(`GET /producer-orders/<producer_id>/`, as `special_instructions`
+alongside `customer_organisation` and `customer_segment`).
 
 The one field worth getting right is `delivery_dates`. It needs **one
 entry per producer represented in the cart**, not one date for the whole
@@ -356,6 +367,65 @@ if someone in the room asked "show me it's actually enforced."
    `is_low_stock: true`.
 5. `GET /api/products/?low_stock_only=true&producer=<producer_jane's id>` —
    confirms the filter, scoped to just that producer.
+
+### F. Community/bulk orders (TC-017)
+
+The seed data already has a ready-made account for this —
+`customer_school`, seeded with `organisation_name: "St Mary's School"`
+and `segment: "community_group"` — so you don't need to register a new
+one just to see it working.
+
+1. Log in as `customer_school`, add items from **two different
+   producers** to the cart (needs to be multi-vendor to exercise the
+   split), and checkout with a `special_instructions` value, e.g.
+   `"Deliver to the kitchen entrance, ask for the kitchen manager."`
+2. `GET /api/orders/` as `customer_school` — the response includes your
+   own `special_instructions` back.
+3. Log in as whichever producer(s) you ordered from, `GET
+   /api/producer-orders/<producer_id>/` — each sub-order should include
+   `customer_organisation: "St Mary's School"`,
+   `customer_segment: "community_group"`, and the same
+   `special_instructions` text. This is the part that actually matters
+   for TC-017 — a producer needs to see this without having to cross-
+   reference the customer's account separately.
+4. To check an ordinary order is unaffected: place one as
+   `customer_robert` with no `special_instructions` — the field comes
+   back as an empty string, not `null` and not missing, and
+   `customer_organisation`/`customer_segment` come back as `""` and
+   `"household"` respectively.
+
+### G. Product reviews (TC-024)
+
+Reviews need a genuinely delivered order to already exist — there's no
+shortcut here, so this sequence takes a bit longer than the others.
+
+1. As `customer_robert`, place an order for a single product and note
+   which producer it's from.
+2. Log in as that producer, `GET /api/producer-orders/<producer_id>/`
+   to find the resulting sub-order's `id`, then `PATCH
+   /api/producer-suborders/<id>/status/` three times in a row —
+   `confirmed`, then `ready`, then `delivered` — one step at a time,
+   same rule as everywhere else.
+3. Log back in as `customer_robert`. `POST
+   /api/products/<product_id>/reviews/`:
+   ```json
+   {"rating": 5, "title": "Great produce", "text": "Very fresh."}
+   ```
+   Expect `201`.
+4. Try it again with the same payload — expect `400`,
+   `"You have already reviewed this product."` This is the one that's
+   easy to get wrong while testing manually: attempting to review
+   something you already have reviewed isn't a bug, it's the point.
+5. `GET /api/products/<product_id>/` — `average_rating` and
+   `review_count` should reflect what you just posted.
+6. `GET /api/products/<product_id>/reviews/` **without being logged in
+   at all** (log out first, or use a fresh incognito tab) — should
+   still return `200` with your review in it. Reviews are meant to help
+   a browsing customer decide, so this one's deliberately public.
+7. As a negative check: pick a different product you've never ordered
+   and `POST` a review for it — expect `400`,
+   `"You can only review products from an order that has actually been
+   delivered to you."`
 
 ---
 

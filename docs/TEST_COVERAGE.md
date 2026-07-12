@@ -33,10 +33,12 @@ with what the tests actually assert.
 | TC-014 | Filter by organic certification | `test_products.py` | 2 |
 | TC-015 (backend only) | Allergen info stored and returned correctly | `test_allergens.py` | 3 |
 | TC-016 | Seasonal availability, including year-boundary wraparound | `test_seasonal_availability.py` | 8 |
+| TC-017 | Community group registers with an organisation/segment; special delivery instructions travel through to the producer | `test_bulk_orders.py` | 6 |
 | TC-019 | Producers mark surplus stock as a discounted, time-limited deal | `test_surplus_deals.py` | 6 |
 | TC-021 | Customer sees own order history, and only their own | `test_order_history.py` | 3 |
 | TC-022 | Password policy, login/session handling, role-based access control | `test_security.py` | 12 |
 | TC-023 | Producers get notified when a product's stock runs low | `test_low_stock_alerts.py` | 6 |
+| TC-024 | Customers rate and review products they've actually had delivered | `test_reviews.py` | 8 |
 | TC-025 | Admin commission report — accurate, filterable, exportable | `test_admin_dashboard.py` | 7 |
 
 ---
@@ -265,6 +267,30 @@ sees none of it.
   combined with AND, not accidentally OR — a product that's in season
   but has zero stock must still be hidden.
 
+## TC-017 — Community/bulk orders (`test_bulk_orders.py`, 6 tests)
+
+- **`test_registration_accepts_organisation_name_and_segment`** and
+  **`test_segment_defaults_to_household_when_not_given`** are really
+  testing two different things at once: that a community group *can*
+  register with its identity intact, and that an ordinary household
+  registration is completely unaffected — `segment` quietly defaulting
+  to `'household'` rather than being required is what keeps this feature
+  additive rather than a breaking change to registration.
+- **`test_producer_sees_customer_organisation_and_instructions`** is the
+  one that actually matters for TC-017's acceptance criteria. Setting
+  `is_surplus` correctly and having the API accept `special_instructions`
+  proves nothing on its own if a producer fulfilling the order never
+  actually sees any of it — this test places the order as the customer,
+  then re-authenticates as the *producer* and asserts the organisation
+  name, segment, and instructions all appear in what the producer reads
+  back, not just what the customer submitted.
+- **`test_bulk_multi_producer_order_splits_correctly`** is deliberately
+  not testing new checkout logic — it's confirming that a "bulk" order
+  is just an ordinary multi-vendor order (TC-008) at a larger quantity,
+  with instructions attached. Nothing about order size needed special
+  handling, which is really the point: the feature is additive metadata
+  on top of an order, not a parallel checkout path.
+
 ## TC-019 — Surplus deals (`test_surplus_deals.py`, 6 tests)
 
 - **`test_discount_outside_ten_to_fifty_percent_rejected`** and
@@ -307,6 +333,42 @@ sees none of it.
   threshold the producer actually chose" — the two are easy to conflate
   and mean very different things.
 
+## TC-024 — Reviews (`test_reviews.py`, 8 tests)
+
+- **`_deliver_a_product_to()`** isn't a test itself — it's a helper every
+  test in this file calls first, since a review needs a genuinely
+  delivered order to exist. It runs a real order through
+  `/api/orders/create/` and then advances the resulting sub-order
+  through `confirmed → ready → delivered` via the actual status
+  endpoint, the same lifecycle `test_producer_orders.py` exercises —
+  reusing the real progression rather than writing directly to
+  `suborder.status` in the test setup, so a review can never be tested
+  against a state checkout/fulfilment couldn't actually produce.
+- **`test_cannot_review_a_product_that_was_never_delivered`** is the one
+  that actually proves TC-024's "review system verifies purchase before
+  allowing submission" acceptance criterion. It's deliberately not
+  testing "never ordered" (that's the next test) — it places a real
+  order and leaves it at `pending`, proving the check is specifically
+  about *delivery*, not merely about the order existing.
+- **`test_average_rating_and_review_count_reflect_delivered_reviews`**
+  creates a second customer from scratch specifically so two different
+  people can review the same product — worth knowing why: `Review`'s
+  `unique_together = ('product', 'customer')` would silently make a
+  same-customer test pass for the wrong reason (there'd only ever be one
+  review possible), so this test needs a genuinely different customer to
+  prove the average is actually averaging, not just echoing a single
+  row back.
+- **`test_product_with_no_reviews_has_null_average_not_zero`** — a
+  product nobody's reviewed should read as "no rating," not "a 0-star
+  rating." Those mean very different things on a catalogue card, and
+  it's an easy distinction to lose if `average_rating` were ever
+  reimplemented with `or 0` instead of checking for `None`.
+- **`test_reviews_are_publicly_readable`** explicitly logs out
+  (`force_authenticate(user=None)`) before hitting the reviews endpoint
+  — reviews are meant to help a browsing customer decide what to buy,
+  so they need to be readable by someone who isn't logged in at all, not
+  just by other authenticated accounts.
+
 ---
 
 ## Not covered by this suite, and why
@@ -315,12 +377,12 @@ sees none of it.
   visual checks (badge colours, catalogue layout, the "Available: June –
   August" text placement) that don't have a meaningful API-level
   assertion. Verified manually in-browser instead.
-- **TC-017, TC-018, TC-020, TC-024** — no model support exists for
-  these; explicitly scoped out per the brief's Medium/Low-priority
-  allowance. Nothing to test because nothing was built, by design.
-  (TC-019 and TC-023 were originally in this scoped-out list too, but
-  have since been implemented — see the sections above.) Per the actual
-  brief (`Test_Cases.pdf`), these four map to: TC-017 community bulk
-  ordering, TC-018 recurring/subscription orders, TC-020 farm
-  stories/recipes, TC-024 product reviews/ratings — confirmed against
-  the brief itself, not inferred from matching list lengths.
+- **TC-018, TC-020** — no model support exists for these; explicitly
+  scoped out per the brief's Medium/Low-priority allowance. Nothing to
+  test because nothing was built, by design. (TC-019, TC-023, TC-017,
+  and TC-024 were originally in this scoped-out list too, but have
+  since been implemented — see the sections above.) Per the actual
+  brief (`Test_Cases.pdf`), these two map to: TC-018
+  recurring/subscription orders, TC-020 farm stories/recipes —
+  confirmed against the brief itself, not inferred from matching list
+  lengths.
